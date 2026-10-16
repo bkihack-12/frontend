@@ -66,23 +66,25 @@ function BoardCard({
             </View>
           ))}
           <Badge label={item.typeLabel} color={item.color} bg="#F3F4F6" />
-          <Badge label={`Odcinek: ${item.lengthLabel}`} color={colors.river} bg={colors.riverSoft} icon="resize-outline" />
         </View>
         <Text style={styles.timeText}>{formatAgo(item.reportedAt)}</Text>
       </View>
 
-      <Text style={styles.title}>{item.title}</Text>
-      <Text style={styles.whereText}>{item.where}</Text>
+      <Text style={styles.title} numberOfLines={1}>
+        {item.title}
+      </Text>
+      <Text style={styles.whereText} numberOfLines={1}>
+        {item.where}
+      </Text>
 
       <View style={styles.footerRow}>
-        <Text style={[styles.impactText, { color: item.color }]}>{item.impact}</Text>
+        <Text style={[styles.impactText, { color: item.color }]} numberOfLines={1}>
+          {item.impact}
+        </Text>
         <Text style={styles.dot}>·</Text>
-        <Text style={styles.statusText}>{item.status}</Text>
-        <View style={{ flex: 1 }} />
-        <View style={styles.mapLink}>
-          <Ionicons name="locate-outline" size={13} color={colors.river} />
-          <Text style={styles.mapLinkText}>Pokaż na mapie</Text>
-        </View>
+        <Text style={styles.statusText} numberOfLines={1}>
+          {item.status}
+        </Text>
       </View>
 
       {selected ? <Text style={styles.desc}>{item.description}</Text> : null}
@@ -329,11 +331,9 @@ const styles = StyleSheet.create({
   title: { ...font.h3, color: colors.ink },
   whereText: { ...font.small, color: colors.inkSoft, marginTop: 2 },
   footerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
-  impactText: { ...font.small, fontWeight: '600' },
+  impactText: { ...font.small, fontWeight: '600', flexShrink: 1 },
   dot: { color: colors.muted, fontSize: 12 },
-  statusText: { ...font.small, color: colors.muted },
-  mapLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  mapLinkText: { fontSize: 12, fontWeight: '600', color: colors.river },
+  statusText: { ...font.small, color: colors.muted, flexShrink: 1 },
   desc: {
     ...font.body,
     color: colors.inkSoft,

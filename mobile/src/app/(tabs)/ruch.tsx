@@ -50,7 +50,7 @@ export default function RuchScreen() {
     <>
       <BoardScreen
         title="Ruch drogowy"
-        subtitle="Mapa zatorów i utrudnień w Toruniu"
+        subtitle="Korki i utrudnienia w Toruniu"
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },

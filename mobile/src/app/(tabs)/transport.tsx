@@ -30,8 +30,8 @@ export default function TransportScreen() {
         typeLabel: TYPES[n.type].label,
         icon: TYPES[n.type].icon,
         color: TYPES[n.type].color,
-        title: `${n.lines.length > 1 ? 'Linie' : 'Linia'} ${n.lines.join(', ')} — ${TYPES[n.type].label.toLowerCase()}`,
-        where: `${n.stop} · ${n.location}`,
+        title: n.stop,
+        where: n.location,
         lines: n.lines,
         reportedAt: n.reportedAt,
         severity: n.severity,
@@ -66,7 +66,7 @@ export default function TransportScreen() {
     <>
       <BoardScreen
         title="Transport"
-        subtitle="Mapa linii MZK i utrudnień"
+        subtitle="Linie i utrudnienia MZK"
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },
