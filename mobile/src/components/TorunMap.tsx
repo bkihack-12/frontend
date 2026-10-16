@@ -25,11 +25,10 @@ import { DEMO_USER_LOCATION, LatLng, TORUN_CENTER, metersPerPixel, project, unpr
 import { colors, font, radius, shadow, spacing, TOUCH } from '../theme';
 
 /**
- * Jasne, stonowane kafelki CARTO Positron + wbudowany wektorowy podkład Torunia (Wisła, mosty,
+ * Rzeczywiste kafelki OpenStreetMap + wbudowany wektorowy podkład Torunia (Wisła, mosty,
  * główne arterie i dzielnice), dzięki czemu mapa jest zawsze czytelna (również offline).
  */
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-const SUBDOMAINS = ['a', 'b', 'c', 'd'];
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const MIN_ZOOM = 11.5;
 const MAX_ZOOM = 18;
 const DEFAULT_ZOOM = 13.7;
@@ -343,8 +342,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     for (let x = minX; x <= maxX; x++) {
       for (let y = minY; y <= maxY; y++) {
         if (x < 0 || y < 0 || x >= max || y >= max) continue;
-        const url = TILE_URL.replace('{s}', SUBDOMAINS[(x + y) % SUBDOMAINS.length])
-          .replace('{z}', String(tz))
+        const url = TILE_URL.replace('{z}', String(tz))
           .replace('{x}', String(x))
           .replace('{y}', String(y));
         out.push({
@@ -497,7 +495,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         </View>
       ) : null}
 
-      {/* Kafelki rastrowe CARTO Positron */}
+      {/* Rzeczywisty podkład OpenStreetMap */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
         {tiles.map((t) => (
           <View
@@ -513,6 +511,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           </View>
         ))}
       </View>
+      <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
 
       {/* Warstwa aktywności + odcinki ulic / linii komunikacji */}
       {size.w > 0 && (showHeat || screenPolylines.length > 0) ? (
@@ -765,6 +764,16 @@ const styles = StyleSheet.create({
   tile: {
     position: 'absolute',
     backgroundColor: 'transparent',
+  },
+  attribution: {
+    position: 'absolute',
+    right: 6,
+    bottom: 6,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    color: '#4B5563',
+    fontSize: 9,
   },
   districtLabel: {
     position: 'absolute',
