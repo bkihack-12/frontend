@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>500 Internal Server Error</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        background-color: #0000aa;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14pt;
+        font-weight: 700;
+        color: white;
+        font-family: fixedsys, terminal, courier, monospace;
+        padding: 2rem;
+      }
+
+      .container {
+        width: 100%;
+        max-width: 650px;
+        text-align: left;
+      }
+
+      p.title {
+        background-color: #ffffff;
+        color: #0000aa;
+        padding: 8px 12px 6px;
+        display: block;
+        width: max-content;
+        margin: 0 auto 1.5rem;
+        text-align: center;
+      }
+
+      p.error {
+        text-align: left;
+        margin-bottom: 1.5rem;
+        line-height: 1.8;
+      }
+
+      ul {
+        margin: 0 0 1.5rem 1.5rem;
+        line-height: 2;
+      }
+
+      li {
+        margin-bottom: 0.25rem;
+      }
+
+      p.continue {
+        text-align: center;
+        margin-top: 1rem;
+      }
+
+      a {
+        color: white;
+      }
+
+      #blink {
+        display: inline-block;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <p class="title">500 Internal Server Error</p>
+
+      <p class="error">
+        A fatal exception 500 has occurred at F001:7001337.<br />
+        The current application will be terminated.
+      </p>
+
+      <ul>
+        <li>Press any key to terminate the current application.</li>
+        <li>
+          Press CTRL+ALT+DEL to restart your computer. You will lose any
+          unsaved information in all applications.
+        </li>
+      </ul>
+
+      <br />
+
+      <p class="continue">
+        Press any key to continue <span id="blink">_</span>
+      </p>
+    </div>
+
+    <script>
+      // Blinking cursor
+      setInterval(function () {
+        var e = document.getElementById("blink");
+        e.style.visibility = e.style.visibility === "hidden" ? "" : "hidden";
+      }, 200);
+
+      // Any key → go back to the app
+      document.body.addEventListener("keydown", function () {
+        window.location.replace("https://morzeai.kuczkoowska.pl");
+      });
+
+      // Touch / click support for mobile
+      document.body.addEventListener("click", function () {
+        window.location.replace("https://morzeai.kuczkoowska.pl");
+      });
+    </script>
+  </body>
+</html>
