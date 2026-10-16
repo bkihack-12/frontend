@@ -99,6 +99,7 @@ interface Props {
   typeFilters: BoardFilterOption[];
   lineFilters?: string[];
   extraPolylines?: MapPolylineItem[];
+  showItemPaths?: boolean;
   fabLabel: string;
   onFab: () => void;
   emptyTitle: string;
@@ -112,6 +113,7 @@ export function BoardScreen({
   typeFilters,
   lineFilters,
   extraPolylines = [],
+  showItemPaths = true,
   fabLabel,
   onFab,
   emptyTitle,
@@ -159,16 +161,18 @@ export function BoardScreen({
   );
 
   const polylines = useMemo<MapPolylineItem[]>(() => {
-    const activeLines = filtered.map((it) => ({
-      id: it.id,
-      path: it.path,
-      color: it.color,
-      label: it.lines?.length ? `L${it.lines.join('/')} · ${it.lengthLabel}` : it.lengthLabel,
-      dashed: it.typeKey === 'roadworks' || it.typeKey === 'reroute',
-    }));
+    const activeLines = showItemPaths
+      ? filtered.map((it) => ({
+          id: it.id,
+          path: it.path,
+          color: it.color,
+          label: it.lines?.length ? `L${it.lines.join('/')} · ${it.lengthLabel}` : it.lengthLabel,
+          dashed: it.typeKey === 'roadworks' || it.typeKey === 'reroute',
+        }))
+      : [];
     const refLines = extraPolylines.filter((r) => line === 'all' || r.id === `ref-${line}`);
     return [...refLines, ...activeLines];
-  }, [filtered, extraPolylines, line]);
+  }, [filtered, extraPolylines, line, showItemPaths]);
 
   const handleSelect = useCallback(
     (id: string | null) => {

@@ -1,4 +1,5 @@
 import type { MapPoint, TrafficIncident, TransitNotice } from '../types';
+import { TRANSIT_ROUTE_SHAPES } from './transitRoutes';
 
 const ago = (min: number) => new Date(Date.now() - min * 60000).toISOString();
 
@@ -16,12 +17,14 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0048,
     lng: 18.5998,
-    lengthLabel: '1,4 km',
+    lengthLabel: '1,9 km',
     path: [
-      { lat: 52.9985, lng: 18.5958 },
-      { lat: 53.0018, lng: 18.5979 },
-      { lat: 53.0055, lng: 18.6003 },
-      { lat: 53.0087, lng: 18.6029 },
+      { lat: 52.997614, lng: 18.596128 },
+      { lat: 52.998434, lng: 18.602319 },
+      { lat: 52.999826, lng: 18.604686 },
+      { lat: 53.003586, lng: 18.602745 },
+      { lat: 53.00752, lng: 18.600715 },
+      { lat: 53.008244, lng: 18.602533 },
     ],
   },
   {
@@ -37,11 +40,14 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0218,
     lng: 18.5975,
-    lengthLabel: '850 m',
+    lengthLabel: '1,1 km',
     path: [
-      { lat: 53.0168, lng: 18.5998 },
-      { lat: 53.0205, lng: 18.5981 },
-      { lat: 53.0242, lng: 18.5964 },
+      { lat: 53.01713, lng: 18.600429 },
+      { lat: 53.018293, lng: 18.599932 },
+      { lat: 53.020608, lng: 18.597361 },
+      { lat: 53.022274, lng: 18.595256 },
+      { lat: 53.023406, lng: 18.596135 },
+      { lat: 53.024177, lng: 18.596397 },
     ],
   },
   {
@@ -57,11 +63,15 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0142,
     lng: 18.5835,
-    lengthLabel: '1,1 km',
+    lengthLabel: '1,5 km',
     path: [
-      { lat: 53.0131, lng: 18.5945 },
-      { lat: 53.0138, lng: 18.5865 },
-      { lat: 53.0147, lng: 18.5782 },
+      { lat: 53.0131, lng: 18.594509 },
+      { lat: 53.013966, lng: 18.593759 },
+      { lat: 53.014317, lng: 18.590593 },
+      { lat: 53.014961, lng: 18.586266 },
+      { lat: 53.015303, lng: 18.583514 },
+      { lat: 53.015238, lng: 18.578969 },
+      { lat: 53.014437, lng: 18.578193 },
     ],
   },
   {
@@ -77,10 +87,16 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0189,
     lng: 18.6442,
-    lengthLabel: '450 m',
+    lengthLabel: '2,4 km',
     path: [
-      { lat: 53.0167, lng: 18.6435 },
-      { lat: 53.0206, lng: 18.6449 },
+      { lat: 53.01752, lng: 18.64263 },
+      { lat: 53.016909, lng: 18.641169 },
+      { lat: 53.015508, lng: 18.637691 },
+      { lat: 53.014335, lng: 18.632257 },
+      { lat: 53.015036, lng: 18.630588 },
+      { lat: 53.016677, lng: 18.635899 },
+      { lat: 53.018662, lng: 18.640122 },
+      { lat: 53.020714, lng: 18.644797 },
     ],
   },
   {
@@ -96,11 +112,14 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0081,
     lng: 18.6078,
-    lengthLabel: '600 m',
+    lengthLabel: '700 m',
     path: [
-      { lat: 53.0069, lng: 18.6041 },
-      { lat: 53.0081, lng: 18.6079 },
-      { lat: 53.0094, lng: 18.6119 },
+      { lat: 53.007649, lng: 18.603593 },
+      { lat: 53.008132, lng: 18.605767 },
+      { lat: 53.008379, lng: 18.607807 },
+      { lat: 53.008607, lng: 18.610325 },
+      { lat: 53.008974, lng: 18.611968 },
+      { lat: 53.009546, lng: 18.611676 },
     ],
   },
   {
@@ -116,11 +135,16 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0211,
     lng: 18.6625,
-    lengthLabel: '1,9 km',
+    lengthLabel: '3,1 km',
     path: [
-      { lat: 53.0228, lng: 18.6775 },
-      { lat: 53.0215, lng: 18.6632 },
-      { lat: 53.0199, lng: 18.6495 },
+      { lat: 53.022872, lng: 18.677191 },
+      { lat: 53.023235, lng: 18.675606 },
+      { lat: 53.025124, lng: 18.67427 },
+      { lat: 53.025092, lng: 18.669601 },
+      { lat: 53.024204, lng: 18.664415 },
+      { lat: 53.022544, lng: 18.654973 },
+      { lat: 53.021738, lng: 18.649526 },
+      { lat: 53.019896, lng: 18.649461 },
     ],
   },
   {
@@ -136,11 +160,16 @@ export const TRAFFIC_INCIDENTS: TrafficIncident[] = [
     source: 'sample',
     lat: 53.0235,
     lng: 18.6152,
-    lengthLabel: '700 m',
+    lengthLabel: '2,0 km',
     path: [
-      { lat: 53.0205, lng: 18.6128 },
-      { lat: 53.0235, lng: 18.6152 },
-      { lat: 53.0268, lng: 18.6176 },
+      { lat: 53.020481, lng: 18.612697 },
+      { lat: 53.018746, lng: 18.613539 },
+      { lat: 53.020845, lng: 18.612879 },
+      { lat: 53.022647, lng: 18.61251 },
+      { lat: 53.02465, lng: 18.611522 },
+      { lat: 53.026468, lng: 18.611309 },
+      { lat: 53.027655, lng: 18.613544 },
+      { lat: 53.026806, lng: 18.617661 },
     ],
   },
 ];
@@ -257,51 +286,17 @@ export const TRANSIT_NOTICES: TransitNotice[] = [
 
 export const TRANSIT_LINES = ['1', '2', '4', '11', '14', '22', '25', '27'];
 
-/** Pełne poglądowe przebiegi głównych linii MZK Toruń do wyświetlania w tle mapy Transportu. */
+/** Przebiegi linii MZK pochodzące z rzeczywistych kształtów GTFS. */
 export const TRANSIT_REFERENCE_ROUTES: {
   line: string;
   name: string;
   color: string;
   lengthLabel: string;
   path: MapPoint[];
-}[] = [
-  {
-    line: '1',
-    name: 'Uniwersytet ↔ Olimpijska',
-    color: '#3B6990',
-    lengthLabel: '9,4 km',
-    path: [
-      { lat: 53.0185, lng: 18.5665 },
-      { lat: 53.0145, lng: 18.5835 },
-      { lat: 53.0087, lng: 18.6029 },
-      { lat: 53.0138, lng: 18.6088 },
-      { lat: 53.0185, lng: 18.6435 },
-      { lat: 53.0232, lng: 18.6815 },
-    ],
-  },
-  {
-    line: '2',
-    name: 'Motoarena ↔ Elana',
-    color: '#2E855A',
-    lengthLabel: '8,7 km',
-    path: [
-      { lat: 53.0155, lng: 18.5545 },
-      { lat: 53.0176, lng: 18.5758 },
-      { lat: 53.0127, lng: 18.6006 },
-      { lat: 53.0218, lng: 18.6145 },
-      { lat: 53.0298, lng: 18.6425 },
-    ],
-  },
-  {
-    line: '11',
-    name: 'Koniuchy ↔ Dworzec Główny',
-    color: '#8B5CF6',
-    lengthLabel: '7,2 km',
-    path: [
-      { lat: 53.0355, lng: 18.6042 },
-      { lat: 53.0215, lng: 18.6002 },
-      { lat: 53.0087, lng: 18.6029 },
-      { lat: 52.9968, lng: 18.6028 },
-    ],
-  },
-];
+}[] = TRANSIT_ROUTE_SHAPES.map((route) => ({
+  line: route.line,
+  name: `Linia ${route.line}`,
+  color: '#3B6990',
+  lengthLabel: route.lengthLabel,
+  path: route.path,
+}));
