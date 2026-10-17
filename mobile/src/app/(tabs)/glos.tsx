@@ -6,9 +6,7 @@ import {
   Badge,
   Button,
   Chip,
-  CornerFilterButton,
-  EmptyState,
-  Sheet,
+   Sheet,
   TextField,
 } from '../../components/ui';
 import { formatAgo } from '../../lib/format';
@@ -17,8 +15,6 @@ import { useAuth } from '../../state/AuthContext';
 import { useToast } from '../../state/ToastContext';
 import { colors, font, radius, shadow, spacing } from '../../theme';
 import type { CivicCategory, CivicMessage, CivicStatus } from '../../types';
-
-type FilterMode = 'all' | CivicCategory | 'mine';
 
 const CATEGORY_META: Record<
   CivicCategory,
@@ -31,29 +27,29 @@ const CATEGORY_META: Record<
   }
 > = {
   wniosek: {
-    label: 'Wniosek / Inicjatywa',
-    shortLabel: 'WNIOSEK',
+    label: 'Wniosek',
+    shortLabel: 'Wniosek',
     icon: 'bulb-outline',
     color: colors.success,
     bg: colors.successSoft,
   },
   zgloszenie: {
-    label: 'Zgłoszenie usterki',
-    shortLabel: 'ZGŁOSZENIE',
+    label: 'Usterka',
+    shortLabel: 'Usterka',
     icon: 'construct-outline',
     color: colors.warning,
     bg: colors.warningSoft,
   },
   skarga: {
-    label: 'Skarga / Interwencja',
-    shortLabel: 'SKARGA',
+    label: 'Interwencja',
+    shortLabel: 'Interwencja',
     icon: 'alert-circle-outline',
     color: colors.brickDark,
     bg: colors.brickSoft,
   },
   pytanie: {
-    label: 'Pytanie do władz',
-    shortLabel: 'PYTANIE',
+    label: 'Pytanie',
+    shortLabel: 'Pytanie',
     icon: 'help-circle-outline',
     color: colors.river,
     bg: colors.riverSoft,
@@ -68,23 +64,23 @@ const STATUS_META: Record<
     bg: string;
   }
 > = {
-  new: { label: 'Wysłano do urzędu', color: colors.inkSoft, bg: colors.cream },
+  new: { label: 'Wysłano', color: colors.inkSoft, bg: colors.cream },
   in_review: { label: 'W realizacji', color: colors.warning, bg: colors.warningSoft },
-  answered: { label: 'Odpowiedź urzędu', color: colors.river, bg: colors.riverSoft },
+  answered: { label: 'Odpowiedź', color: colors.river, bg: colors.riverSoft },
   implemented: { label: 'Zrealizowano', color: colors.success, bg: colors.successSoft },
 };
 
 const DEPARTMENTS = [
-  'Urząd Miasta — Kancelaria Prezydenta',
+  'Kancelaria Prezydenta',
   'Miejski Zarząd Dróg (MZD)',
-  'Wydział Gospodarki Komunalnej',
-  'Wydział Środowiska i Ekologii',
+  'Gospodarka Komunalna',
+  'Środowisko i Ekologia',
   'Rada Miasta Torunia',
 ];
 
 const DISTRICTS = [
-  'Stare Miasto / Bydgoskie Przedmieście',
-  'Chełmińskie Przedmieście / Wrzosy',
+  'Stare Miasto / Bydgoskie',
+  'Chełmińskie / Wrzosy',
   'Rubinkowo / Na Skarpie',
   'Podgórz / Lewobrzeże',
   'Jakubskie / Mokre',
@@ -96,169 +92,55 @@ export default function GlosMieszkancaScreen() {
   const { user, openAuth } = useAuth();
   const { showToast } = useToast();
 
-  const [filter, setFilter] = useState<FilterMode>('all');
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [composeOpen, setComposeOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  const filtered = useMemo(
-    () =>
-      civicMessages.filter((m) => {
-        if (filter === 'all') return true;
-        if (filter === 'mine') return m.isMine;
-        return m.category === filter;
-      }),
-    [civicMessages, filter],
-  );
 
   const selectedMessage = useMemo(
     () => civicMessages.find((m) => m.id === selectedId) ?? null,
     [civicMessages, selectedId],
   );
 
-  const activeCount = filter !== 'all' ? 1 : undefined;
-
   return (
     <View style={styles.root}>
-      <ScreenHeader
-        title="Głos Mieszkańca"
-        subtitle="Wnioski, zgłoszenia i skargi bezpośrednio do władz Torunia"
-      />
+      <ScreenHeader title="Głos" />
 
       <View style={styles.contentArea}>
-        <CornerFilterButton
-          count={activeCount}
-          onPress={() => setFiltersOpen(true)}
-          style={styles.cornerBtn}
-        />
-
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Baner zachęcający do wysłania głosu do władz */}
-          <View style={styles.heroCard}>
-            <View style={styles.heroTop}>
-              <View style={styles.heroIconWrap}>
-                <Ionicons name="megaphone-outline" size={22} color={colors.brick} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.heroTitle}>Masz wpływ na Toruń</Text>
-                <Text style={styles.heroSub}>
-                  Wyślij wniosek, zgłoś problem lub złóż skargę do właściwego wydziału Urzędu Miasta.
-                  Każde pismo otrzymuje numer sprawy i powiadomienie o odpowiedzi.
-                </Text>
+          <Pressable
+            onPress={() => setComposeOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Twój głos może zmienić nasze miasto — zgłoś sprawę"
+            style={({ pressed }) => [styles.posterBanner, pressed && { opacity: 0.92 }]}
+          >
+            <View style={styles.posterDecoCircle} />
+            <View style={styles.posterTopRow}>
+              <Ionicons name="megaphone" size={26} color="#FFFFFF" />
+              <View style={styles.posterCtaPill}>
+                <Ionicons name="add" size={16} color={colors.brickDark} />
+                <Text style={styles.posterCtaText}>ZGŁOŚ SPRAWĘ</Text>
               </View>
             </View>
-            <View style={styles.heroActions}>
-              <Button
-                label="Wyślij wiadomość do władz"
-                icon="paper-plane-outline"
-                onPress={() => setComposeOpen(true)}
-                style={{ flex: 1 }}
-              />
-            </View>
-          </View>
-
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeading}>
-              {filter === 'mine'
-                ? 'Moje wysłane pisma'
-                : 'Publiczne pisma i inicjatywy mieszkańców'}
+            <Text style={styles.posterHeadline}>
+              TWÓJ GŁOS MOŻE{'\n'}ZMIENIĆ NASZE MIASTO
             </Text>
-            <Text style={styles.countMeta}>{filtered.length} spraw</Text>
-          </View>
+          </Pressable>
 
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon="chatbubbles-outline"
-              title="Brak pism w tej kategorii"
-              message={
-                filter === 'mine'
-                  ? 'Nie wysłałeś jeszcze żadnej wiadomości do władz miasta.'
-                  : 'W tym widoku nie ma jeszcze zgłoszeń.'
-              }
-              actionLabel="Wyślij pierwsze pismo"
-              onAction={() => setComposeOpen(true)}
-            />
-          ) : (
-            <View style={styles.grid}>
-              {filtered.map((msg) => (
-                <CivicGridTile
-                  key={msg.id}
-                  message={msg}
-                  upvoted={hasUpvotedCivic(msg.id)}
-                  onOpen={() => setSelectedId(msg.id)}
-                />
-              ))}
-            </View>
-          )}
+          <View style={styles.grid}>
+            {civicMessages.map((msg) => (
+              <CivicGridTile
+                key={msg.id}
+                message={msg}
+                upvoted={hasUpvotedCivic(msg.id)}
+                onOpen={() => setSelectedId(msg.id)}
+              />
+            ))}
+          </View>
         </ScrollView>
       </View>
 
-      {/* Wysuwane menu filtrów z pojedynczego przycisku w rogu */}
-      <Sheet
-        visible={filtersOpen}
-        onClose={() => setFiltersOpen(false)}
-        title="Filtry — Głos Mieszkańca"
-        footer={
-          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-            <Button
-              label="Wyczyść"
-              variant="secondary"
-              onPress={() => setFilter('all')}
-              style={{ flex: 1 }}
-            />
-            <Button
-              label={`Pokaż (${filtered.length})`}
-              onPress={() => setFiltersOpen(false)}
-              style={{ flex: 2 }}
-            />
-          </View>
-        }
-      >
-        <Text style={styles.groupTitle}>Rodzaj pisma do władz</Text>
-        <View style={styles.wrap}>
-          <Chip
-            label="Wszystkie sprawy"
-            icon="apps-outline"
-            selected={filter === 'all'}
-            onPress={() => setFilter('all')}
-          />
-          <Chip
-            label="Wnioski i inicjatywy"
-            icon="bulb-outline"
-            selected={filter === 'wniosek'}
-            onPress={() => setFilter('wniosek')}
-          />
-          <Chip
-            label="Zgłoszenia usterek"
-            icon="construct-outline"
-            selected={filter === 'zgloszenie'}
-            onPress={() => setFilter('zgloszenie')}
-          />
-          <Chip
-            label="Skargi i interwencje"
-            icon="alert-circle-outline"
-            selected={filter === 'skarga'}
-            onPress={() => setFilter('skarga')}
-          />
-          <Chip
-            label="Pytania do władz"
-            icon="help-circle-outline"
-            selected={filter === 'pytanie'}
-            onPress={() => setFilter('pytanie')}
-          />
-          <Chip
-            label="Moje wysłane pisma"
-            icon="person-outline"
-            selected={filter === 'mine'}
-            onPress={() => setFilter('mine')}
-          />
-        </View>
-      </Sheet>
-
-      {/* Okienko ze szczegółami pisma i odpowiedzią władz */}
       <CivicDetailSheet
         message={selectedMessage}
         onClose={() => setSelectedId(null)}
@@ -267,13 +149,12 @@ export default function GlosMieszkancaScreen() {
           if (!selectedMessage) return;
           const nowUpvoted = await toggleCivicUpvote(selectedMessage.id);
           showToast(
-            nowUpvoted ? 'Poparto pismo mieszkańca' : 'Cofnięto poparcie',
+            nowUpvoted ? 'Poparto sprawę' : 'Cofnięto poparcie',
             nowUpvoted ? 'success' : 'info',
           );
         }}
       />
 
-      {/* Formularz wysłania nowego pisma do władz */}
       <ComposeCivicSheet
         visible={composeOpen}
         onClose={() => setComposeOpen(false)}
@@ -281,7 +162,7 @@ export default function GlosMieszkancaScreen() {
         onLoginPrompt={() => {
           setComposeOpen(false);
           setTimeout(
-            () => openAuth('login', 'Zaloguj się, aby otrzymywać powiadomienia o odpowiedzi Urzędu Miasta.'),
+            () => openAuth('login', 'Zaloguj się, aby śledzić odpowiedzi Urzędu.'),
             250,
           );
         }}
@@ -289,16 +170,12 @@ export default function GlosMieszkancaScreen() {
           const created = await addCivicMessage(input);
           setComposeOpen(false);
           setSelectedId(created.id);
-          showToast(`Pismo przekazane do urzędu (${created.referenceCode})`, 'success');
+          showToast(`Przekazano (${created.referenceCode})`, 'success');
         }}
       />
     </View>
   );
 }
-
-/* ============================================================================
- * Kafelek w 2-kolumnowej siatce — zwięzły, czytelny, kliknięcie otwiera szczegóły
- * ========================================================================== */
 
 function CivicGridTile({
   message,
@@ -309,14 +186,13 @@ function CivicGridTile({
   upvoted: boolean;
   onOpen: () => void;
 }) {
-  const cat = CATEGORY_META[message.category];
   const st = STATUS_META[message.status];
 
   return (
     <Pressable
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`${cat.label}: ${message.title}`}
+      accessibilityLabel={message.title}
       style={({ pressed }) => [
         styles.tile,
         message.isMine && styles.tileMine,
@@ -324,42 +200,23 @@ function CivicGridTile({
       ]}
     >
       <View style={styles.tileTop}>
-        <Badge label={cat.shortLabel} color={cat.color} bg={cat.bg} icon={cat.icon} />
-        {message.officialReply ? (
-          <View style={styles.replyDot} accessibilityLabel="Odpowiedź urzędu">
-            <Ionicons name="checkmark-done-circle" size={16} color={colors.success} />
-          </View>
-        ) : null}
+        <Text style={[styles.upvoteHero, upvoted && { color: colors.brick }]}>
+          +{message.upvotes}
+        </Text>
+        <Text style={[styles.statusMini, { color: st.color }]}>{st.label}</Text>
       </View>
 
-      <Text style={styles.tileTitle} numberOfLines={2}>
-        {message.title}
-      </Text>
-
-      <Text style={styles.tileDept} numberOfLines={1}>
-        {message.department}
-      </Text>
-
-      <View style={styles.tileFooter}>
-        <Badge label={st.label} color={st.color} bg={st.bg} />
-        <View style={[styles.upvotePill, upvoted && styles.upvotePillActive]}>
-          <Ionicons
-            name={upvoted ? 'thumbs-up' : 'thumbs-up-outline'}
-            size={12}
-            color={upvoted ? colors.brick : colors.inkSoft}
-          />
-          <Text style={[styles.upvoteCount, upvoted && { color: colors.brick }]}>
-            {message.upvotes}
-          </Text>
-        </View>
+      <View style={styles.tileTextGroup}>
+        <Text style={styles.tileTitle} numberOfLines={2}>
+          {message.title}
+        </Text>
+        <Text style={styles.districtText} numberOfLines={1}>
+          {message.district || 'Toruń'}
+        </Text>
       </View>
     </Pressable>
   );
 }
-
-/* ============================================================================
- * Modal ze szczegółami pisma i oficjalną odpowiedzią Urzędu Miasta
- * ========================================================================== */
 
 function CivicDetailSheet({
   message,
@@ -380,83 +237,44 @@ function CivicDetailSheet({
     <Sheet
       visible={Boolean(message)}
       onClose={onClose}
-      title="Szczegóły pisma do władz"
+      title={message.referenceCode}
       footer={
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <Button
-            label={upvoted ? `Popierasz (${message.upvotes})` : `Poprzyj pismo (${message.upvotes})`}
-            icon={upvoted ? 'thumbs-up' : 'thumbs-up-outline'}
-            variant={upvoted ? 'secondary' : 'primary'}
-            onPress={onToggleUpvote}
-            style={{ flex: 1 }}
-          />
-        </View>
+        <Button
+          label={upvoted ? `Popierasz (+${message.upvotes})` : `Poprzyj (+${message.upvotes})`}
+          icon={upvoted ? 'thumbs-up' : 'thumbs-up-outline'}
+          variant={upvoted ? 'secondary' : 'primary'}
+          onPress={onToggleUpvote}
+        />
       }
     >
       <View style={styles.detailBadges}>
         <Badge label={cat.label} color={cat.color} bg={cat.bg} icon={cat.icon} />
         <Badge label={message.statusLabel || st.label} color={st.color} bg={st.bg} />
-        {message.isMine ? (
-          <Badge label="Twoje pismo" color={colors.brickDark} bg={colors.brickSoft} icon="person-outline" />
-        ) : null}
       </View>
 
       <Text style={styles.detailTitle}>{message.title}</Text>
 
-      <View style={styles.metaBox}>
-        <View style={styles.metaRow}>
-          <Ionicons name="document-text-outline" size={16} color={colors.brick} />
-          <Text style={styles.metaText}>Sygnatura sprawy: {message.referenceCode}</Text>
-        </View>
-        <View style={styles.metaRow}>
-          <Ionicons name="business-outline" size={16} color={colors.brick} />
-          <Text style={styles.metaText}>Adresat: {message.department}</Text>
-        </View>
-        {message.district ? (
-          <View style={styles.metaRow}>
-            <Ionicons name="location-outline" size={16} color={colors.brick} />
-            <Text style={styles.metaText}>Osiedle / rejon: {message.district}</Text>
-          </View>
-        ) : null}
-        <View style={styles.metaRow}>
-          <Ionicons name="person-circle-outline" size={16} color={colors.brick} />
-          <Text style={styles.metaText}>
-            Autor: {message.author} · {formatAgo(message.createdAt)}
+      <View style={styles.locationBox}>
+        <Ionicons name="location-outline" size={18} color={colors.brick} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.locationBoxTitle}>{message.district || 'Toruń'}</Text>
+          <Text style={styles.locationBoxSub}>
+            {message.department} · {formatAgo(message.createdAt)}
           </Text>
         </View>
       </View>
 
-      <View style={styles.divider} />
-
-      <Text style={styles.sectionSmallTitle}>Treść pisma mieszkańca</Text>
       <Text style={styles.detailBody}>{message.description}</Text>
 
       {message.officialReply ? (
         <View style={styles.replyBox}>
-          <View style={styles.replyHeader}>
-            <Ionicons name="shield-checkmark-outline" size={18} color={colors.success} />
-            <Text style={styles.replyAuthor}>
-              Oficjalne stanowisko: {message.department}
-            </Text>
-          </View>
+          <Text style={styles.replyAuthor}>Odpowiedź urzędu</Text>
           <Text style={styles.replyBody}>{message.officialReply}</Text>
         </View>
-      ) : (
-        <View style={styles.pendingBox}>
-          <Ionicons name="time-outline" size={18} color={colors.warning} />
-          <Text style={styles.pendingText}>
-            Sprawa oczekuje na oficjalne stanowisko wydziału ({message.department}). Po udzieleniu
-            odpowiedzi otrzymasz powiadomienie w panelu użytkownika.
-          </Text>
-        </View>
-      )}
+      ) : null}
     </Sheet>
   );
 }
-
-/* ============================================================================
- * Formularz wysłania wiadomości / wniosku / skargi do władz miasta
- * ========================================================================== */
 
 function ComposeCivicSheet({
   visible,
@@ -486,11 +304,11 @@ function ComposeCivicSheet({
 
   const submit = () => {
     if (title.trim().length < 5) {
-      setError('Wpisz krótki tytuł sprawy (min. 5 znaków).');
+      setError('Wpisz temat (min. 5 znaków).');
       return;
     }
     if (description.trim().length < 10) {
-      setError('Opisz sprawę dokładniej (min. 10 znaków).');
+      setError('Dodaj krótki opis (min. 10 znaków).');
       return;
     }
     setError(undefined);
@@ -509,29 +327,22 @@ function ComposeCivicSheet({
     <Sheet
       visible={visible}
       onClose={onClose}
-      title="Wyślij pismo do władz Torunia"
+      title="Nowe zgłoszenie"
       footer={
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <Button label="Anuluj" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
-          <Button
-            label="Wyślij do urzędu"
-            icon="paper-plane-outline"
-            onPress={submit}
-            style={{ flex: 2 }}
-          />
+          <Button label="Wyślij" icon="paper-plane-outline" onPress={submit} style={{ flex: 2 }} />
         </View>
       }
     >
       {!isLogged ? (
         <Pressable onPress={onLoginPrompt} style={styles.loginHint} accessibilityRole="button">
-          <Ionicons name="notifications-outline" size={18} color={colors.brick} />
-          <Text style={styles.loginHintText}>
-            Możesz wysłać zgłoszenie teraz, lub zalogować się, aby śledzić status pisma i powiadomienia.
-          </Text>
+          <Ionicons name="person-outline" size={15} color={colors.brick} />
+          <Text style={styles.loginHintText}>Zaloguj się, aby śledzić status odpowiedzi</Text>
         </Pressable>
       ) : null}
 
-      <Text style={styles.groupTitle}>1. Rodzaj wiadomości</Text>
+      <Text style={styles.groupTitle}>Rodzaj</Text>
       <View style={styles.wrap}>
         {(Object.keys(CATEGORY_META) as CivicCategory[]).map((key) => {
           const meta = CATEGORY_META[key];
@@ -547,19 +358,7 @@ function ComposeCivicSheet({
         })}
       </View>
 
-      <Text style={styles.groupTitle}>2. Adresat w Urzędzie Miasta</Text>
-      <View style={styles.wrap}>
-        {DEPARTMENTS.map((dept) => (
-          <Chip
-            key={dept}
-            label={dept}
-            selected={department === dept}
-            onPress={() => setDepartment(dept)}
-          />
-        ))}
-      </View>
-
-      <Text style={styles.groupTitle}>3. Osiedle / lokalizacja</Text>
+      <Text style={styles.groupTitle}>Rejon</Text>
       <View style={styles.wrap}>
         {DISTRICTS.map((dist) => (
           <Chip
@@ -571,18 +370,30 @@ function ComposeCivicSheet({
         ))}
       </View>
 
+      <Text style={styles.groupTitle}>Wydział</Text>
+      <View style={styles.wrap}>
+        {DEPARTMENTS.map((dept) => (
+          <Chip
+            key={dept}
+            label={dept}
+            selected={department === dept}
+            onPress={() => setDepartment(dept)}
+          />
+        ))}
+      </View>
+
       <TextField
-        label="Temat pisma / sprawy"
+        label="Temat"
         value={title}
         onChangeText={setTitle}
-        placeholder="np. Doświetlenie przejścia dla pieszych na ul. Szosa Chełmińska"
+        placeholder="np. Doświetlenie przejścia na ul. Gagarina"
       />
 
       <TextField
-        label="Treść wniosku, zgłoszenia lub skargi"
+        label="Opis"
         value={description}
         onChangeText={setDescription}
-        placeholder="Opisz dokładnie problem lub propozycję zmiany oraz uzasadnienie dla mieszkańców..."
+        placeholder="Krótki opis sprawy..."
         multiline
         error={error}
       />
@@ -593,50 +404,56 @@ function ComposeCivicSheet({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.cream },
   contentArea: { flex: 1 },
-  cornerBtn: {
-    left: undefined,
-    right: spacing.md,
-    top: spacing.sm,
-  },
   scrollContent: {
     padding: spacing.md,
-    paddingTop: spacing.xl + spacing.sm,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.xxl,
+    gap: spacing.sm,
   },
-  heroCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.line,
-    padding: spacing.md,
-    marginBottom: spacing.md,
+  posterBanner: {
+    backgroundColor: colors.brick,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
     gap: spacing.md,
-    ...shadow.card,
+    overflow: 'hidden',
+    ...shadow.float,
   },
-  heroTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.md,
+  posterDecoCircle: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    right: -40,
+    bottom: -50,
   },
-  heroIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
-    backgroundColor: colors.brickSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroTitle: { ...font.h2, color: colors.ink },
-  heroSub: { ...font.small, color: colors.inkSoft, marginTop: 4, lineHeight: 19 },
-  heroActions: { flexDirection: 'row' },
-  sectionHeaderRow: {
+  posterTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: spacing.sm,
   },
-  sectionHeading: { ...font.h3, color: colors.inkSoft },
-  countMeta: { ...font.tiny, color: colors.muted },
+  posterCtaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+  },
+  posterCtaText: {
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 0.4,
+    color: colors.brickDark,
+  },
+  posterHeadline: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -0.6,
+    lineHeight: 33,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -645,100 +462,81 @@ const styles = StyleSheet.create({
   tile: {
     flexGrow: 1,
     flexBasis: '47%',
-    minWidth: 150,
+    minWidth: 148,
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.line,
-    padding: spacing.md,
+    padding: spacing.lg,
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 12,
     ...shadow.card,
   },
   tileMine: {
     borderColor: colors.brick,
-    backgroundColor: colors.brickSoft,
   },
-  tilePressed: { opacity: 0.9 },
+  tilePressed: { opacity: 0.88, transform: [{ scale: 0.99 }] },
   tileTop: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  replyDot: {
-    padding: 2,
-  },
-  tileTitle: {
-    ...font.bodyBold,
-    color: colors.ink,
-    lineHeight: 20,
-  },
-  tileDept: {
-    ...font.tiny,
-    color: colors.muted,
-  },
-  tileFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: 6,
-    marginTop: 2,
   },
-  upvotePill: {
+  upvoteHero: {
+    fontSize: 24,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+    color: colors.ink,
+  },
+  statusMini: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tileTextGroup: {
+    gap: 3,
+  },
+  tileTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.ink,
+    lineHeight: 18,
+  },
+  districtText: {
+    fontSize: 12,
+    color: colors.muted,
+  },
+  groupTitle: { ...font.small, fontWeight: '700', color: colors.inkSoft, marginBottom: 6 },
+  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.md },
+  detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
+  detailTitle: { ...font.h2, color: colors.ink, marginBottom: spacing.sm },
+  locationBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radius.pill,
-    backgroundColor: colors.cream,
-  },
-  upvotePillActive: {
-    backgroundColor: colors.brickSoft,
-  },
-  upvoteCount: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: colors.inkSoft,
-  },
-  groupTitle: { ...font.bodyBold, color: colors.ink, marginBottom: 8 },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
-  detailBadges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.sm },
-  detailTitle: { ...font.h2, color: colors.ink, marginBottom: spacing.md },
-  metaBox: {
+    gap: 10,
     backgroundColor: colors.cream,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: 8,
+    marginBottom: spacing.md,
   },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  metaText: { ...font.small, color: colors.inkSoft, flex: 1 },
-  divider: {
-    height: 1,
-    backgroundColor: colors.line,
-    marginVertical: spacing.md,
+  locationBoxTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.ink,
   },
-  sectionSmallTitle: { ...font.bodyBold, color: colors.ink, marginBottom: 6 },
-  detailBody: { ...font.body, color: colors.ink, lineHeight: 22, marginBottom: spacing.md },
+  locationBoxSub: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  detailBody: { ...font.body, color: colors.inkSoft, lineHeight: 20, marginBottom: spacing.md },
   replyBox: {
     backgroundColor: colors.successSoft,
     borderRadius: radius.md,
     padding: spacing.md,
-    gap: 8,
+    gap: 4,
   },
-  replyHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  replyAuthor: { ...font.bodyBold, color: colors.success, flex: 1 },
-  replyBody: { ...font.small, color: colors.ink, lineHeight: 20 },
-  pendingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.warningSoft,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
-  pendingText: { ...font.small, color: colors.ink, flex: 1, lineHeight: 19 },
+  replyAuthor: { ...font.small, fontWeight: '700', color: colors.success },
+  replyBody: { ...font.small, color: colors.ink, lineHeight: 19 },
   loginHint: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -750,4 +548,3 @@ const styles = StyleSheet.create({
   },
   loginHintText: { ...font.small, color: colors.brickDark, flex: 1 },
 });
-

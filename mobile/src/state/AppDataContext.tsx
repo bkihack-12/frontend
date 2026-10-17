@@ -8,6 +8,7 @@ import type {
   CityEvent,
   CivicCategory,
   CivicMessage,
+  EventCategory,
   IncidentType,
   NoticeType,
   NotificationPrefs,
@@ -22,12 +23,15 @@ interface PersistedData {
   interested: string[];
   bookings: Record<string, Booking[]>;
   savedOffers: string[];
+  userEvents: CityEvent[];
+  deletedEventIds: string[];
   userIncidents: TrafficIncident[];
   userNotices: TransitNotice[];
   userCivicMessages: CivicMessage[];
   upvotedCivicIds: string[];
   notifications: UserNotification[];
   notificationPrefs: NotificationPrefs;
+  taxVerified: boolean;
 }
 
 const DEFAULT_PREFS: NotificationPrefs = {
@@ -41,12 +45,15 @@ const EMPTY: PersistedData = {
   interested: [],
   bookings: {},
   savedOffers: [],
+  userEvents: [],
+  deletedEventIds: [],
   userIncidents: [],
   userNotices: [],
   userCivicMessages: [],
   upvotedCivicIds: [],
   notifications: INITIAL_NOTIFICATIONS,
   notificationPrefs: DEFAULT_PREFS,
+  taxVerified: false,
 };
 
 type BookResult = { ok: true; booking: Booking } | { ok: false; error: string };
@@ -54,6 +61,18 @@ type BookResult = { ok: true; booking: Booking } | { ok: false; error: string };
 interface AppDataValue {
   ready: boolean;
   events: CityEvent[];
+  addEvent: (input: {
+    title: string;
+    category: EventCategory;
+    venue: string;
+    address: string;
+    lat: number;
+    lng: number;
+    isFree: boolean;
+    priceZl?: number;
+    description: string;
+  }) => Promise<CityEvent>;
+  deleteEvent: (eventId: string) => void;
   isInterested: (eventId: string) => boolean;
   toggleInterested: (eventId: string) => boolean;
   interestedCount: (event: CityEvent) => number;
@@ -95,6 +114,8 @@ interface AppDataValue {
   markAllNotificationsRead: () => void;
   notificationPrefs: NotificationPrefs;
   toggleNotificationPref: (key: keyof NotificationPrefs) => void;
+  taxVerified: boolean;
+  setTaxVerified: (verified: boolean) => void;
 }
 
 const AppDataContext = createContext<AppDataValue | null>(null);
@@ -184,6 +205,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             ? stored.notifications
             : INITIAL_NOTIFICATIONS,
         notificationPrefs: { ...DEFAULT_PREFS, ...(stored.notificationPrefs ?? {}) },
+        userEvents: Array.isArray(stored.userEvents) ? stored.userEvents : [],
+        deletedEventIds: Array.isArray(stored.deletedEventIds) ? stored.deletedEventIds : [],
         userCivicMessages: Array.isArray(stored.userCivicMessages) ? stored.userCivicMessages : [],
         upvotedCivicIds: Array.isArray(stored.upvotedCivicIds) ? stored.upvotedCivicIds : [],
       });
@@ -518,6 +541,73 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
+  const setTaxVerified = useCallback(
+    (verified: boolean) => {
+      update((p) => ({
+        ...p,
+        taxVerified: verified,
+      }));
+    },
+    [update],
+  );
+
+  const allEvents = useMemo(() => {
+    const deleted = new Set(data.deletedEventIds ?? []);
+    return [...(data.userEvents ?? []), ...EVENTS].filter((e) => !deleted.has(e.id));
+  }, [data.userEvents, data.deletedEventIds]);
+
+  const deleteEvent = useCallback(
+    (eventId: string) => {
+      update((p) => {
+        const deleted = p.deletedEventIds ?? [];
+        return {
+          ...p,
+          userEvents: (p.userEvents ?? []).filter((e) => e.id !== eventId),
+          deletedEventIds: deleted.includes(eventId) ? deleted : [...deleted, eventId],
+          interested: (p.interested ?? []).filter((id) => id !== eventId),
+        };
+      });
+    },
+    [update],
+  );
+
+  const addEvent = useCallback<AppDataValue['addEvent']>(
+    async ({ title, category, venue, address, lat, lng, isFree, priceZl, description }) => {
+      await wait(300);
+      const start = new Date(Date.now() + 24 * 3600 * 1000);
+      start.setHours(18, 0, 0, 0);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+      const item: CityEvent = {
+        id: `ev-user-${Date.now()}`,
+        title: title.trim(),
+        category,
+        startsAt: start.toISOString(),
+        endsAt: end.toISOString(),
+        venue: venue.trim(),
+        address: address.trim() || venue.trim(),
+        lat,
+        lng,
+        isFree,
+        priceZl: isFree ? undefined : priceZl ?? 25,
+        type: 'open',
+        interested: 1,
+        description: description.trim(),
+        organizer: user?.name ?? 'Mieszkaniec Torunia',
+      };
+      update((p) => ({
+        ...p,
+        userEvents: [item, ...(p.userEvents ?? [])],
+      }));
+      pushNotification({
+        title: `Dodano wydarzenie: ${item.title}`,
+        body: `Lokalizacja: ${item.venue}`,
+        kind: 'event',
+      });
+      return item;
+    },
+    [pushNotification, update, user],
+  );
+
   const unreadNotificationCount = useMemo(
     () => (data.notifications ?? []).filter((n) => !n.read).length,
     [data.notifications],
@@ -525,7 +615,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
 
   const value: AppDataValue = {
     ready,
-    events: EVENTS,
+    events: allEvents,
+    addEvent,
+    deleteEvent,
     isInterested,
     toggleInterested,
     interestedCount,
@@ -550,6 +642,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     markAllNotificationsRead,
     notificationPrefs: data.notificationPrefs ?? DEFAULT_PREFS,
     toggleNotificationPref,
+    taxVerified: Boolean(data.taxVerified),
+    setTaxVerified,
   };
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Button, Chip, InlineNotice, MetaRow, Sheet, TextField } from './ui';
-import { KIND_META, OFFER_CATEGORY_LABEL } from '../data/offers';
+import { Button, Sheet } from './ui';
 import { formatLongDate } from '../lib/format';
 import type { CityOffer, ResidentBenefit } from '../types';
 import { useAppData } from '../state/AppDataContext';
@@ -17,206 +16,86 @@ export interface TaxpayerDeclaration {
   confirmed: boolean;
 }
 
-const TAX_OFFICES = [
-  'Pierwszy Urząd Skarbowy w Toruniu',
-  'Drugi Urząd Skarbowy w Toruniu',
-];
+const BENEFIT_VISUAL: Record<string, { bg: string; fg: string }> = {
+  'ben-mzk': { bg: '#DBEAFE', fg: '#1D4ED8' },
+  'ben-kultura': { bg: '#FCE7F3', fg: '#BE185D' },
+  'ben-sport': { bg: '#D1FAE5', fg: '#047857' },
+  'ben-parking': { bg: '#EDE9FE', fg: '#6D28D9' },
+};
 
-/** Logotyp firmy / przedsiębiorstwa partnerskiego (monogram + ikona branży w barwach marki). */
-export function CompanyLogo({
-  offer,
-  size = 'sm',
-}: {
-  offer: Pick<CityOffer, 'business' | 'logoText' | 'logoColor' | 'logoBg' | 'logoIcon'>;
-  size?: 'sm' | 'lg';
-}) {
-  const bg = offer.logoBg ?? colors.cream;
-  const fg = offer.logoColor ?? colors.ink;
-  const monogram =
-    offer.logoText ??
-    offer.business
-      .split(' ')
-      .map((w) => w.replace(/[^A-Za-zĄĆĘŁŃÓŚŹŻąćęłńóśźż]/g, '')[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
-  const isLg = size === 'lg';
-
-  return (
-    <View
-      style={[
-        styles.logoBox,
-        isLg && styles.logoBoxLg,
-        { backgroundColor: bg, borderColor: `${fg}30` },
-      ]}
-    >
-      {offer.logoIcon ? (
-        <Ionicons name={offer.logoIcon as never} size={isLg ? 16 : 12} color={fg} />
-      ) : null}
-      <Text style={[styles.logoMonogram, isLg && styles.logoMonogramLg, { color: fg }]}>
-        {monogram}
-      </Text>
-    </View>
-  );
+/** Wyciąga samą wysokość zniżki (np. "−20%", "−35%", "2 w 1", "−30 min"). */
+export function extractDiscountValue(raw?: string): string {
+  if (!raw) return 'Zniżka';
+  const trimmed = raw.trim();
+  if (/^2\s*w\s*cenie\s*1$/i.test(trimmed)) return '2 w 1';
+  const rangeMatch = trimmed.match(/^(−?\d+%)\s*do\s*(−?\d+%)$/i);
+  if (rangeMatch) return rangeMatch[2];
+  const doMatch = trimmed.match(/^do\s+(−?\d+%)$/i);
+  if (doMatch) return doMatch[1];
+  const minMatch = trimmed.match(/^(\d+\s*min)/i);
+  if (minMatch) return `−${minMatch[1]}`;
+  const percentMatch = trimmed.match(/^([−-]\d+%)/);
+  if (percentMatch) return percentMatch[1];
+  return trimmed;
 }
 
-/** Kompaktowy baner informujący, że do zniżek mają prawo wyłącznie osoby płacące podatki w Toruniu. */
+/** Skraca nazwę firmy do czystej, krótkiej formy na kafelek. */
+function shortCompanyName(business: string): string {
+  return business
+    .replace(/Naleśnikarnia\s+/i, '')
+    .replace(/Browar Staromiejski\s+/i, '')
+    .replace(/Manufaktura\s+/i, '')
+    .replace(/Salon Optyczny\s+/i, '')
+    .replace(/Księgarnia & Planszówki\s+/i, '')
+    .replace(/\s*·.*$/, '')
+    .replace(/\s+w Toruniu$/i, '')
+    .replace(/\s+Toruń$/i, '')
+    .replace(/„|”|"/g, '')
+    .trim();
+}
+
+/** Krótki, spokojny jednowierszowy komunikat o zniżkach PIT kierujący do profilu. */
 export function TaxpayerBanner({
-  declaration,
-  onOpenForm,
+  onOpenProfile,
 }: {
-  declaration: TaxpayerDeclaration | null;
-  onOpenForm: () => void;
+  declaration?: TaxpayerDeclaration | null;
+  onOpenForm?: () => void;
+  onOpenProfile?: () => void;
 }) {
-  const verified = Boolean(declaration?.confirmed);
-  return (
-    <View style={[styles.taxBanner, verified && styles.taxBannerVerified]}>
-      <View style={styles.taxBannerTop}>
-        <View style={[styles.taxIconWrap, verified && { backgroundColor: colors.successSoft }]}>
-          <Ionicons
-            name={verified ? 'shield-checkmark' : 'receipt-outline'}
-            size={20}
-            color={verified ? colors.success : colors.brick}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.taxBannerTitle}>
-            {verified
-              ? 'Uprawnienia aktywne — Podatnik w Toruniu'
-              : 'Zniżki tylko dla płacących podatki w Toruniu'}
-          </Text>
-          <Text style={styles.taxBannerSub}>
-            {verified
-              ? `${declaration?.fullName} · ${declaration?.taxOffice}`
-              : 'Prawo do ulg miejskich i ofert firm partnerskich mają wyłącznie osoby rozliczające PIT w Toruniu.'}
-          </Text>
-        </View>
-      </View>
-      <Button
-        label={verified ? 'Twoja deklaracja PIT' : 'Potwierdź rozliczanie podatków w Toruniu'}
-        icon={verified ? 'create-outline' : 'document-text-outline'}
-        variant={verified ? 'secondary' : 'primary'}
-        small
-        onPress={onOpenForm}
-        style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
-      />
-    </View>
-  );
-}
+  const { taxVerified } = useAppData();
+  const { openAuth } = useAuth();
 
-/** Formularz oświadczenia o rozliczaniu podatku dochodowego (PIT) w Toruniu. */
-export function TaxpayerFormSheet({
-  visible,
-  onClose,
-  initial,
-  onSave,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  initial: TaxpayerDeclaration | null;
-  onSave: (decl: TaxpayerDeclaration) => void;
-}) {
-  const { user } = useAuth();
-  const [fullName, setFullName] = useState(initial?.fullName || user?.name || '');
-  const [taxOffice, setTaxOffice] = useState(initial?.taxOffice || TAX_OFFICES[0]);
-  const [address, setAddress] = useState(initial?.address || '');
-  const [confirmed, setConfirmed] = useState(initial?.confirmed ?? false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
-
-  React.useEffect(() => {
-    if (visible) {
-      setFullName(initial?.fullName || user?.name || '');
-      setTaxOffice(initial?.taxOffice || TAX_OFFICES[0]);
-      setAddress(initial?.address || '');
-      setConfirmed(initial?.confirmed ?? false);
-      setErrors({});
-    }
-  }, [visible, initial, user]);
-
-  const submit = () => {
-    const e: Record<string, string> = {};
-    if (fullName.trim().length < 3) e.fullName = 'Podaj imię i nazwisko.';
-    if (address.trim().length < 4) e.address = 'Podaj adres zamieszkania w Toruniu.';
-    if (!confirmed) e.confirmed = 'Wymagane jest potwierdzenie rozliczania podatków w Toruniu.';
-    setErrors(e);
-    if (Object.keys(e).length > 0) return;
-
-    onSave({
-      fullName: fullName.trim(),
-      taxOffice,
-      address: address.trim(),
-      confirmed: true,
-    });
-    onClose();
+  const handlePress = () => {
+    if (onOpenProfile) onOpenProfile();
+    else openAuth('account');
   };
 
   return (
-    <Sheet
-      visible={visible}
-      onClose={onClose}
-      title="Weryfikacja podatnika w Toruniu"
-      footer={<Button label="Zapisz i aktywuj uprawnienia" icon="checkmark-circle-outline" onPress={submit} />}
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.pitNote, pressed && { opacity: 0.75 }]}
     >
-      <InlineNotice
-        kind="info"
-        text="Ze zniżek miejskich oraz rabatów w firmach partnerskich mogą korzystać wyłącznie osoby, które rozliczają podatek dochodowy (PIT) w Toruniu."
+      <Ionicons
+        name={taxVerified ? 'checkmark-circle' : 'information-circle-outline'}
+        size={15}
+        color={taxVerified ? colors.success : colors.muted}
       />
-
-      <View style={{ height: spacing.md }} />
-      <TextField
-        label="Imię i nazwisko"
-        icon="person-outline"
-        value={fullName}
-        onChangeText={setFullName}
-        placeholder="np. Jan Kowalski"
-        error={errors.fullName}
-      />
-
-      <TextField
-        label="Adres zamieszkania w Toruniu"
-        icon="home-outline"
-        value={address}
-        onChangeText={setAddress}
-        placeholder="np. ul. Szeroka 12/4, 87-100 Toruń"
-        error={errors.address}
-      />
-
-      <Text style={styles.fieldLabel}>Urząd Skarbowy właściwy dla rozliczenia PIT</Text>
-      <View style={styles.officeWrap}>
-        {TAX_OFFICES.map((office) => (
-          <Chip
-            key={office}
-            label={office}
-            icon="business-outline"
-            selected={taxOffice === office}
-            onPress={() => setTaxOffice(office)}
-          />
-        ))}
-      </View>
-
-      <Pressable
-        onPress={() => {
-          setConfirmed((v) => !v);
-          setErrors((prev) => ({ ...prev, confirmed: '' }));
-        }}
-        style={styles.checkboxRow}
-      >
-        <Ionicons
-          name={confirmed ? 'checkbox' : 'square-outline'}
-          size={22}
-          color={confirmed ? colors.brick : colors.muted}
-        />
-        <Text style={styles.checkboxText}>
-          Oświadczam, że płacę podatki w Toruniu (rozliczam deklarację PIT w toruńskim Urzędzie Skarbowym).
-        </Text>
-      </Pressable>
-      {errors.confirmed ? <Text style={styles.errorText}>{errors.confirmed}</Text> : null}
-    </Sheet>
+      <Text style={styles.pitNoteText} numberOfLines={1}>
+        {taxVerified
+          ? 'Zniżki PIT w Toruniu aktywne'
+          : 'Zniżki z PIT w Toruniu — aktywuj w profilu'}
+      </Text>
+      <Ionicons name="chevron-forward" size={13} color={colors.muted} />
+    </Pressable>
   );
 }
 
-/** Siatka (grid) głównych pakietów zniżek dla mieszkańców — na kafelku tylko duża zniżka i czego dotyczy. */
+/**
+ * Pełnoekranowe wiersze pakietów miejskich:
+ * Lwia część kafelka to duże kolorowe pole z ikoną na górze,
+ * a na dole tylko wysokość zniżki, nazwa i krótki opis.
+ */
 export function ResidentBenefitsGrid({
   benefits,
   onSelectBenefit,
@@ -225,35 +104,49 @@ export function ResidentBenefitsGrid({
   onSelectBenefit: (b: ResidentBenefit) => void;
 }) {
   return (
-    <View style={styles.sectionBlock}>
-      <Text style={styles.gridHeading}>Pakiety miejskie (PIT w Toruniu)</Text>
-      <View style={styles.grid}>
-        {benefits.map((b) => (
+    <View style={styles.columnList}>
+      {benefits.map((b) => {
+        const discountVal = extractDiscountValue(b.discount);
+        const vis = BENEFIT_VISUAL[b.id] ?? { bg: colors.riverSoft, fg: colors.river };
+        return (
           <Pressable
             key={b.id}
             onPress={() => onSelectBenefit(b)}
-            style={({ pressed }) => [styles.gridTile, pressed && { opacity: 0.9 }]}
+            style={({ pressed }) => [styles.rowCard, pressed && styles.cardPressed]}
           >
-            <View style={styles.tileTop}>
-              <View style={styles.discountHeroRiver}>
-                <Text style={styles.discountHeroTextRiver}>{b.discount}</Text>
+            <View style={[styles.heroBanner, { backgroundColor: vis.bg }]}>
+              <View style={[styles.decoCircleLarge, { backgroundColor: `${vis.fg}10` }]} />
+              <View style={[styles.decoCircleSmall, { backgroundColor: `${vis.fg}14` }]} />
+              <View style={[styles.heroIconWrap, { backgroundColor: `${vis.fg}18` }]}>
+                <Ionicons name={b.icon as never} size={46} color={vis.fg} />
               </View>
-              <Ionicons name={b.icon as never} size={18} color={colors.river} />
             </View>
-            <Text style={styles.tileTitle} numberOfLines={2}>
-              {b.title}
-            </Text>
-            <Text style={styles.tileSub} numberOfLines={1}>
-              {b.place}
-            </Text>
+
+            <View style={styles.cardBottom}>
+              <View style={styles.cardTextCol}>
+                <Text style={styles.companyName} numberOfLines={1}>
+                  {b.title}
+                </Text>
+                <Text style={styles.shortDesc} numberOfLines={1}>
+                  {b.place}
+                </Text>
+              </View>
+              <Text style={[styles.discountValue, { color: vis.fg }]} numberOfLines={1}>
+                {discountVal}
+              </Text>
+            </View>
           </Pressable>
-        ))}
-      </View>
+        );
+      })}
     </View>
   );
 }
 
-/** Kafelek oferty firmy/przedsiębiorstwa z logotypem w siatce 2-kolumnowej. */
+/**
+ * Pełnowymiarowy kafelek w osobnym rzędzie:
+ * Na górze duże kolorowe pole z ikoną (lwia część kafelka),
+ * na dole wyłącznie: nazwa firmy, krótki opis i wysokość zniżki.
+ */
 export function OfferGridTile({
   offer,
   onOpen,
@@ -261,70 +154,59 @@ export function OfferGridTile({
   offer: CityOffer;
   onOpen: () => void;
 }) {
-  const { savedOffers } = useAppData();
-  const saved = savedOffers.includes(offer.id);
-  const discountLabel =
-    offer.benefitTag ??
-    (offer.kind === 'sponsored' ? 'Promocja' : OFFER_CATEGORY_LABEL[offer.category]);
+  const discountVal = extractDiscountValue(offer.benefitTag);
+  const company = shortCompanyName(offer.business);
+  const bg = offer.logoBg ?? colors.brickSoft;
+  const fg = offer.logoColor ?? colors.brick;
+  const icon = (offer.logoIcon ?? 'pricetag-outline') as React.ComponentProps<typeof Ionicons>['name'];
 
   return (
     <Pressable
       onPress={onOpen}
-      accessibilityLabel={`${offer.business}: ${offer.title}`}
-      style={({ pressed }) => [styles.gridTile, pressed && { opacity: 0.9 }]}
+      accessibilityRole="button"
+      accessibilityLabel={`${discountVal}, ${company}, ${offer.title}`}
+      style={({ pressed }) => [styles.rowCard, pressed && styles.cardPressed]}
     >
-      <View style={styles.tileTop}>
-        <CompanyLogo offer={offer} size="sm" />
-        <View
-          style={[
-            styles.discountHeroBrick,
-            !offer.tkm && { backgroundColor: colors.warningSoft },
-          ]}
-        >
-          <Text
-            style={[
-              styles.discountHeroTextBrick,
-              !offer.tkm && { color: colors.warning },
-            ]}
-            numberOfLines={1}
-          >
-            {discountLabel}
-          </Text>
+      <View style={[styles.heroBanner, { backgroundColor: bg }]}>
+        <View style={[styles.decoCircleLarge, { backgroundColor: `${fg}10` }]} />
+        <View style={[styles.decoCircleSmall, { backgroundColor: `${fg}14` }]} />
+        <View style={[styles.heroIconWrap, { backgroundColor: `${fg}18` }]}>
+          <Ionicons name={icon} size={48} color={fg} />
         </View>
       </View>
 
-      <Text style={styles.tileTitle} numberOfLines={2}>
-        {offer.title}
-      </Text>
-
-      <View style={styles.partnerFooter}>
-        <Text style={styles.partnerName} numberOfLines={1}>
-          {offer.business}
-        </Text>
-        <View style={styles.partnerTypeRow}>
-          <Text style={styles.partnerTypeBadge}>
-            {offer.isPrivatePartner !== false ? 'Firma partnerska' : 'Instytucja miejska'}
+      <View style={styles.cardBottom}>
+        <View style={styles.cardTextCol}>
+          <Text style={styles.companyName} numberOfLines={1}>
+            {company}
           </Text>
-          {saved ? <Ionicons name="bookmark" size={13} color={colors.brick} /> : null}
+          <Text style={styles.shortDesc} numberOfLines={1}>
+            {offer.title}
+          </Text>
         </View>
+        <Text style={[styles.discountValue, { color: fg }]} numberOfLines={1}>
+          {discountVal}
+        </Text>
       </View>
     </Pressable>
   );
 }
 
-/** Okienko ze szczegółami pakietu miejskiego po kliknięciu w kafelek. */
+/** Popup ze szczegółami pakietu miejskiego (lokalizacja + szczegóły). */
 export function BenefitDetailSheet({
   benefit,
   onClose,
-  taxVerified,
-  onOpenTaxForm,
 }: {
   benefit: ResidentBenefit | null;
   onClose: () => void;
-  taxVerified: boolean;
-  onOpenTaxForm: () => void;
+  taxVerified?: boolean;
+  onOpenTaxForm?: () => void;
 }) {
+  const { taxVerified } = useAppData();
+  const { openAuth } = useAuth();
+
   if (!benefit) return null;
+
   return (
     <Sheet
       visible
@@ -335,61 +217,47 @@ export function BenefitDetailSheet({
           <Button label="Zamknij" variant="secondary" onPress={onClose} />
         ) : (
           <Button
-            label="Potwierdź PIT w Toruniu, aby korzystać"
-            icon="document-text-outline"
+            label="Aktywuj PIT w profilu"
+            icon="person-outline"
             onPress={() => {
               onClose();
-              setTimeout(onOpenTaxForm, 220);
+              setTimeout(() => openAuth('account'), 220);
             }}
           />
         )
       }
     >
-      <View style={styles.detailHeroRow}>
-        <View style={styles.detailDiscountPill}>
-          <Text style={styles.detailDiscountText}>{benefit.discount}</Text>
-        </View>
-        <Badge
-          label="Tylko dla podatników w Toruniu"
-          color={colors.river}
-          bg={colors.riverSoft}
-          icon="id-card-outline"
-        />
+      <Text style={[styles.popupDiscount, { color: colors.river }]}>{benefit.discount}</Text>
+
+      <View style={styles.locationBox}>
+        <Ionicons name="location-outline" size={18} color={colors.river} />
+        <Text style={styles.locationBoxText}>{benefit.place}</Text>
       </View>
 
-      <Text style={styles.body}>{benefit.description}</Text>
-
-      <View style={styles.info}>
-        <MetaRow icon="location-outline" text={`Gdzie obowiązuje: ${benefit.place}`} />
-        <MetaRow
-          icon="receipt-outline"
-          text="Wymóg: rozliczanie podatku dochodowego (PIT) w Toruniu oraz aktywna Toruńska Karta Miejska."
-        />
-      </View>
+      <Text style={styles.popupBody}>{benefit.description}</Text>
     </Sheet>
   );
 }
 
-/** Okienko ze szczegółami oferty partnerskiej po kliknięciu w kafelek. */
+/** Popup ze szczegółami oferty (lokalizacja, godziny, opis i kod rabatowy). */
 export function OfferDetailSheet({
   offer,
   onClose,
-  taxVerified,
-  onOpenTaxForm,
 }: {
   offer: CityOffer | null;
   onClose: () => void;
   taxVerified?: boolean;
   onOpenTaxForm?: () => void;
 }) {
-  const { savedOffers, toggleSavedOffer } = useAppData();
+  const { savedOffers, toggleSavedOffer, taxVerified } = useAppData();
+  const { openAuth } = useAuth();
   const { showToast } = useToast();
   const [revealed, setRevealed] = useState<string | null>(null);
 
   if (!offer) return null;
-  const kind = KIND_META[offer.kind];
   const saved = savedOffers.includes(offer.id);
   const showCode = revealed === offer.id;
+  const discountVal = offer.benefitTag ?? extractDiscountValue(offer.benefitTag);
 
   return (
     <Sheet
@@ -398,7 +266,7 @@ export function OfferDetailSheet({
         setRevealed(null);
         onClose();
       }}
-      title={offer.title}
+      title={shortCompanyName(offer.business)}
       footer={
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <Button
@@ -407,24 +275,24 @@ export function OfferDetailSheet({
             variant="secondary"
             onPress={() => {
               const now = toggleSavedOffer(offer.id);
-              showToast(now ? 'Zapisano ofertę' : 'Usunięto z zapisanych', now ? 'success' : 'info');
+              showToast(now ? 'Zapisano' : 'Usunięto z zapisanych', now ? 'success' : 'info');
             }}
             style={{ flex: 1 }}
           />
           {offer.code && !showCode ? (
-            offer.tkm && !taxVerified && onOpenTaxForm ? (
+            offer.tkm && !taxVerified ? (
               <Button
-                label="Potwierdź PIT, by odkryć kod"
-                icon="lock-closed-outline"
+                label="Aktywuj PIT w profilu"
+                icon="person-outline"
                 onPress={() => {
                   onClose();
-                  setTimeout(onOpenTaxForm, 220);
+                  setTimeout(() => openAuth('account'), 220);
                 }}
                 style={{ flex: 2 }}
               />
             ) : (
               <Button
-                label="Pokaż kod zniżkowy"
+                label="Pokaż kod"
                 icon="pricetag-outline"
                 onPress={() => setRevealed(offer.id)}
                 style={{ flex: 2 }}
@@ -434,273 +302,171 @@ export function OfferDetailSheet({
         </View>
       }
     >
-      <View style={styles.companyHeader}>
-        <CompanyLogo offer={offer} size="lg" />
+      <Text style={styles.popupDiscount}>{discountVal}</Text>
+      <Text style={styles.popupSubtitle}>{offer.title}</Text>
+
+      <View style={styles.locationBox}>
+        <Ionicons name="location-outline" size={18} color={colors.brick} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.companyNameLg}>{offer.business}</Text>
-          <Text style={styles.companyTypeSub}>
-            {offer.isPrivatePartner !== false
-              ? 'Przedsiębiorstwo prywatne · Partner Karty Mieszkańca'
-              : 'Miejska instytucja partnerska'}
-          </Text>
+          <Text style={styles.locationBoxText}>{offer.address}</Text>
+          {offer.hours ? <Text style={styles.hoursText}>{offer.hours}</Text> : null}
         </View>
       </View>
 
-      <View style={styles.detailHeroRow}>
-        {offer.benefitTag ? (
-          <View style={styles.detailDiscountPillBrick}>
-            <Text style={styles.detailDiscountTextBrick}>{offer.benefitTag}</Text>
-          </View>
-        ) : null}
-        <Badge label={kind.label} color={kind.color} bg={kind.bg} />
-        {offer.tkm ? (
-          <Badge
-            label="Wymagany PIT w Toruniu"
-            color={colors.river}
-            bg={colors.riverSoft}
-            icon="id-card-outline"
-          />
-        ) : null}
-      </View>
-
-      <Text style={styles.body}>{offer.description}</Text>
-
       {showCode && offer.code ? (
         <View style={styles.codeBox}>
-          <Text style={styles.codeLabel}>Kod rabatowy w lokalu / kasie</Text>
+          <Text style={styles.codeLabel}>KOD W LOKALU</Text>
           <Text style={styles.code}>{offer.code}</Text>
         </View>
       ) : null}
 
-      <View style={styles.info}>
-        <MetaRow icon="location-outline" text={offer.address} />
-        {offer.hours ? <MetaRow icon="time-outline" text={offer.hours} /> : null}
-        <MetaRow
-          icon="calendar-outline"
-          text={offer.expiresAt ? `Ważne do ${formatLongDate(offer.expiresAt)}` : 'Oferta stała'}
-        />
-        <MetaRow icon="information-circle-outline" text={offer.conditions} />
-        {offer.tkm ? (
-          <MetaRow
-            icon="receipt-outline"
-            text="Uprawnienie przysługuje wyłącznie osobom płacącym podatki w Toruniu."
-          />
-        ) : null}
-      </View>
+      <Text style={styles.popupBody}>{offer.description}</Text>
+
+      <Text style={styles.conditionsNote}>
+        {offer.conditions}
+        {offer.expiresAt ? ` · ważne do ${formatLongDate(offer.expiresAt)}` : ''}
+      </Text>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  logoBox: {
-    height: 30,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-    borderWidth: 1,
+  pitNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  logoBoxLg: {
-    height: 44,
-    paddingHorizontal: 12,
-    borderRadius: 12,
     gap: 6,
-  },
-  logoMonogram: {
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-  },
-  logoMonogramLg: {
-    fontSize: 14,
-  },
-  companyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
-    padding: spacing.sm,
-    backgroundColor: colors.cream,
-    borderRadius: radius.md,
-  },
-  companyNameLg: {
-    ...font.bodyBold,
-    color: colors.ink,
-  },
-  companyTypeSub: {
-    ...font.tiny,
-    color: colors.muted,
-    marginTop: 1,
-  },
-  taxBanner: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E5BFB8',
-    marginBottom: spacing.md,
-    ...shadow.card,
-  },
-  taxBannerVerified: {
-    borderColor: '#B7E0C7',
-    backgroundColor: '#F9FCFA',
-  },
-  taxBannerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  taxIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.md,
-    backgroundColor: colors.brickSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  taxBannerTitle: { ...font.bodyBold, color: colors.ink },
-  taxBannerSub: { ...font.small, color: colors.inkSoft, marginTop: 2 },
-  fieldLabel: {
-    ...font.small,
-    fontWeight: '600',
-    color: colors.inkSoft,
-    marginBottom: 6,
-  },
-  officeWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: spacing.md,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.cream,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  checkboxText: { ...font.small, color: colors.ink, flex: 1 },
-  errorText: { ...font.small, color: colors.danger, marginTop: 4 },
-  sectionBlock: { marginBottom: spacing.md },
-  gridHeading: {
-    ...font.h3,
-    color: colors.inkSoft,
-    marginBottom: spacing.sm,
-  },
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
-  gridTile: {
-    flexBasis: '47%',
-    flexGrow: 1,
-    minWidth: 145,
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.line,
-    justifyContent: 'space-between',
-    gap: 8,
-    ...shadow.card,
-  },
-  tileTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  discountHeroRiver: {
-    backgroundColor: colors.riverSoft,
+    paddingVertical: 7,
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: radius.md,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
-  discountHeroTextRiver: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: colors.river,
+  pitNoteText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.inkSoft,
   },
-  discountHeroBrick: {
-    backgroundColor: colors.brickSoft,
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: radius.md,
-    flexShrink: 1,
+
+  columnList: {
+    gap: spacing.md,
   },
-  discountHeroTextBrick: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: colors.brickDark,
+  rowCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: 'hidden',
+    ...shadow.card,
   },
-  tileTitle: {
-    ...font.bodyBold,
-    color: colors.ink,
-    lineHeight: 19,
+  cardPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
   },
-  tileSub: {
-    ...font.tiny,
-    color: colors.muted,
+  heroBanner: {
+    height: 164,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  partnerFooter: {
+  decoCircleLarge: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    right: -40,
+    top: -60,
+  },
+  decoCircleSmall: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    left: -30,
+    bottom: -40,
+  },
+  heroIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardBottom: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  cardTextCol: {
+    flex: 1,
     gap: 2,
   },
-  partnerName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.inkSoft,
-  },
-  partnerTypeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  partnerTypeBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.muted,
-  },
-  detailHeroRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: spacing.sm,
-  },
-  detailDiscountPill: {
-    backgroundColor: colors.riverSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-  },
-  detailDiscountText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: colors.river,
-  },
-  detailDiscountPillBrick: {
-    backgroundColor: colors.brickSoft,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: radius.md,
-  },
-  detailDiscountTextBrick: {
+  companyName: {
     fontSize: 17,
     fontWeight: '800',
-    color: colors.brickDark,
+    color: colors.ink,
+    letterSpacing: -0.3,
   },
-  body: { ...font.body, color: colors.inkSoft, marginTop: 6, marginBottom: spacing.md },
-  info: {
-    gap: 6,
+  shortDesc: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '400',
+  },
+  discountValue: {
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -1,
+    color: colors.brick,
+  },
+
+  /* Popup ze szczegółami */
+  popupDiscount: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -1,
+    color: colors.brick,
+  },
+  popupSubtitle: {
+    ...font.bodyBold,
+    color: colors.ink,
+    marginTop: 2,
+    marginBottom: spacing.md,
+  },
+  locationBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: colors.cream,
     borderRadius: radius.md,
     padding: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  locationBoxText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  hoursText: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  popupBody: {
+    ...font.body,
+    color: colors.inkSoft,
+    marginBottom: spacing.sm,
+  },
+  conditionsNote: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
   },
   codeBox: {
     alignItems: 'center',
@@ -709,6 +475,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brickSoft,
     marginBottom: spacing.md,
   },
-  codeLabel: { ...font.small, color: colors.brickDark },
-  code: { fontSize: 20, fontWeight: '700', letterSpacing: 2, color: colors.brickDark, marginTop: 2 },
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: colors.brickDark,
+  },
+  code: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 3,
+    color: colors.brickDark,
+    marginTop: 2,
+  },
 });

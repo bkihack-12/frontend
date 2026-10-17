@@ -3,15 +3,12 @@ import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View }
 import { Ionicons } from '@expo/vector-icons';
 import { Button, EmptyState, LoadingState } from './ui';
 import { EventCard, eventDiscountTag } from './EventCard';
-import { OfferGridTile, TaxpayerBanner, TaxpayerDeclaration } from './OfferParts';
-import { OFFERS } from '../data/offers';
-import { formatDateTime, pluralPl } from '../lib/format';
+import { formatDateTime } from '../lib/format';
 import type { EventWithDistance } from '../lib/eventFilters';
-import type { CityOffer } from '../types';
 import { colors, font, radius, shadow, spacing } from '../theme';
 
-export const PEEK_EMPTY = 68;
-export const PEEK_SELECTED = 148;
+export const PEEK_EMPTY = 64;
+export const PEEK_SELECTED = 136;
 
 interface Props {
   events: EventWithDistance[];
@@ -23,11 +20,9 @@ interface Props {
   hasFilters: boolean;
   onClearFilters: () => void;
   onOpenEvent: (e: EventWithDistance) => void;
-  onOpenOffer: (o: CityOffer) => void;
   onShowOnMap: (e: EventWithDistance) => void;
   onClearSelection: () => void;
-  taxDecl: TaxpayerDeclaration | null;
-  onOpenTaxForm: () => void;
+  onDeleteEvent?: (e: EventWithDistance) => void;
 }
 
 export function NearbyPanel({
@@ -40,14 +35,12 @@ export function NearbyPanel({
   hasFilters,
   onClearFilters,
   onOpenEvent,
-  onOpenOffer,
   onShowOnMap,
   onClearSelection,
-  taxDecl,
-  onOpenTaxForm,
+  onDeleteEvent,
 }: Props) {
   const peekH = selected ? PEEK_SELECTED : PEEK_EMPTY;
-  const openH = Math.max(PEEK_SELECTED + 40, mapHeight * 0.76);
+  const openH = Math.max(PEEK_SELECTED + 40, mapHeight * 0.72);
   const target = open ? openH : peekH;
   const height = useRef(new Animated.Value(target)).current;
 
@@ -79,11 +72,9 @@ export function NearbyPanel({
         <View style={styles.handle} />
         <View style={styles.headRow}>
           <Text style={styles.headTitle}>
-            Wydarzenia i zniżki ({loading ? '…' : events.length}{' '}
-            {pluralPl(events.length, 'miejsce', 'miejsca', 'miejsc')})
+            Wydarzenia ({loading ? '…' : events.length})
           </Text>
           <View style={{ flex: 1 }} />
-          <Text style={styles.toggleText}>{open ? 'Mapa' : 'Siatka'}</Text>
           <Ionicons name={open ? 'chevron-down' : 'chevron-up'} size={18} color={colors.inkSoft} />
         </View>
       </View>
@@ -95,7 +86,7 @@ export function NearbyPanel({
           <EmptyState
             icon="calendar-outline"
             title="Brak wydarzeń"
-            message="Zmień kryteria wyszukiwania lub wyczyść filtry."
+            message="Zmień kryteria lub wyczyść filtry."
             actionLabel={hasFilters ? 'Wyczyść filtry' : undefined}
             onAction={hasFilters ? onClearFilters : undefined}
           />
@@ -104,9 +95,6 @@ export function NearbyPanel({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
-            <TaxpayerBanner declaration={taxDecl} onOpenForm={onOpenTaxForm} />
-
-            <Text style={styles.sectionHeading}>Wydarzenia i zniżki na bilety</Text>
             <View style={styles.grid}>
               {events.map((item) => (
                 <EventCard
@@ -115,19 +103,7 @@ export function NearbyPanel({
                   highlight={item.id === selected?.id}
                   onOpen={() => onOpenEvent(item)}
                   onShowOnMap={() => onShowOnMap(item)}
-                />
-              ))}
-            </View>
-
-            <Text style={[styles.sectionHeading, { marginTop: spacing.lg }]}>
-              Partnerzy i firmy lokalne ({OFFERS.filter((o) => o.isPrivatePartner).length} firm)
-            </Text>
-            <View style={styles.grid}>
-              {OFFERS.filter((o) => o.isPrivatePartner).map((offer) => (
-                <OfferGridTile
-                  key={offer.id}
-                  offer={offer}
-                  onOpen={() => onOpenOffer(offer)}
+                  onDelete={onDeleteEvent ? () => onDeleteEvent(item) : undefined}
                 />
               ))}
             </View>
@@ -137,13 +113,24 @@ export function NearbyPanel({
         <View style={styles.preview}>
           <Pressable onPress={() => onOpenEvent(selected)} style={{ flex: 1 }}>
             <Text style={styles.previewTitle} numberOfLines={1}>
-              {eventDiscountTag(selected)} · {selected.title}
+              {selected.title}
             </Text>
             <Text style={styles.previewMeta} numberOfLines={1}>
-              {formatDateTime(selected.startsAt)} · {selected.venue}
+              {selected.venue} · {formatDateTime(selected.startsAt)}
             </Text>
           </Pressable>
-          <Button label="Szczegóły" small onPress={() => onOpenEvent(selected)} />
+          <Button label="Więcej" small onPress={() => onOpenEvent(selected)} />
+          {onDeleteEvent ? (
+            <Pressable
+              onPress={() => onDeleteEvent(selected)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Usuń wydarzenie"
+              style={{ padding: 6 }}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            </Pressable>
+          ) : null}
           <Pressable
             onPress={onClearSelection}
             hitSlop={8}
@@ -177,16 +164,10 @@ const styles = StyleSheet.create({
   handle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   headTitle: { ...font.bodyBold, color: colors.ink },
-  toggleText: { ...font.small, color: colors.inkSoft },
   scrollContent: {
-    padding: spacing.lg,
+    padding: spacing.md,
     paddingTop: spacing.xs,
     paddingBottom: spacing.xl,
-  },
-  sectionHeading: {
-    ...font.h3,
-    color: colors.inkSoft,
-    marginBottom: spacing.sm,
   },
   grid: {
     flexDirection: 'row',

@@ -201,6 +201,8 @@ interface Props {
   onToggleHeat?: () => void;
   bottomInset?: number;
   hideControls?: boolean;
+  pickedPoint?: LatLng | null;
+  onPickPoint?: (point: LatLng) => void;
 }
 
 interface Cluster {
@@ -223,6 +225,8 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     onToggleHeat,
     bottomInset = 12,
     hideControls,
+    pickedPoint,
+    onPickPoint,
   },
   ref,
 ) {
@@ -231,6 +235,8 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const viewRef = useRef(view);
   const sizeRef = useRef(size);
   sizeRef.current = size;
+  const onPickPointRef = useRef(onPickPoint);
+  onPickPointRef.current = onPickPoint;
   const containerRef = useRef<React.ComponentRef<typeof View>>(null);
   const animRef = useRef<number | null>(null);
 
@@ -528,6 +534,42 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             prevDy: gs.dy,
           };
         },
+        onPanResponderRelease: (e, gs) => {
+          if (!onPickPointRef.current) return;
+          if (Math.hypot(gs.dx, gs.dy) >= 6) return;
+          const ne = e.nativeEvent as unknown as {
+            clientX?: number;
+            clientY?: number;
+            pageX?: number;
+            pageY?: number;
+            locationX?: number;
+            locationY?: number;
+          };
+          let lx = ne.locationX;
+          let ly = ne.locationY;
+          const node = containerRef.current as unknown as {
+            getBoundingClientRect?: () => { left: number; top: number };
+          } | null;
+          if (node?.getBoundingClientRect && (ne.clientX !== undefined || ne.pageX !== undefined)) {
+            const rect = node.getBoundingClientRect();
+            lx = (ne.clientX ?? ne.pageX ?? 0) - rect.left;
+            ly = (ne.clientY ?? ne.pageY ?? 0) - rect.top;
+          } else if (!Number.isFinite(lx) || !Number.isFinite(ly)) {
+            const r = readTouches(e);
+            lx = r.mx - containerOffset.current.x;
+            ly = r.my - containerOffset.current.y;
+          }
+          const { w, h } = sizeRef.current;
+          if (w <= 0 || h <= 0 || lx === undefined || ly === undefined) return;
+          const v = viewRef.current;
+          const s = Math.pow(2, v.zoom);
+          const wx = v.cx + (lx - w / 2) / s;
+          const wy = v.cy + (ly - h / 2) / s;
+          const pt = unproject(wx, wy, 0);
+          if (Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) {
+            onPickPointRef.current(pt);
+          }
+        },
       }),
     [apply, cancelAnim, zoomAround],
   );
@@ -595,18 +637,31 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     return { clusters: multi, singles: ones };
   }, [events, toScreen, size.w, size.h, selectedId, interestedCount]);
 
-  /* ----- Heat layer (vibrant thermal gradient with deep red peak) ----- */
+  /* ----- Heat layer: zielony (luźno), żółto-bursztynowy (umiarkowany ruch), czerwony (zatłoczone / za dużo ludzi) ----- */
   const heat = useMemo(() => {
     if (!showHeat || !size.w || events.length === 0) return [];
     return events
       .map((ev) => {
         const n = interestedCount(ev);
         const pt = toScreen(ev);
-        const meters = 260 + n * 1.25;
-        const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 42, 215);
-        const intensity = clamp(n / 320, 0.25, 1);
-        const o = clamp(0.58 + intensity * 0.38, 0.62, 0.96);
-        return { id: ev.id, x: pt.x, y: pt.y, r, o, hot: n >= 140 };
+        const capRatio =
+          ev.capacity && ev.capacity > 0 ? (ev.taken ?? 0) / ev.capacity : 0;
+        const isCrowded = n >= 260 || capRatio >= 0.92;
+        const isModerate = !isCrowded && (n >= 120 || capRatio >= 0.75);
+        const level: 'calm' | 'moderate' | 'crowded' = isCrowded
+          ? 'crowded'
+          : isModerate
+            ? 'moderate'
+            : 'calm';
+        const meters =
+          level === 'crowded'
+            ? 250 + n * 1.15
+            : level === 'moderate'
+              ? 195 + n * 0.85
+              : 155 + n * 0.7;
+        const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 36, 195);
+        const o = level === 'crowded' ? 0.92 : level === 'moderate' ? 0.82 : 0.76;
+        return { id: ev.id, x: pt.x, y: pt.y, r, o, level };
       })
       .filter((h) => Number.isFinite(h.x) && Number.isFinite(h.y) && Number.isFinite(h.r));
   }, [events, showHeat, toScreen, size.w, view.zoom, interestedCount]);
@@ -746,34 +801,57 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Svg width={size.w} height={size.h}>
             <Defs>
-              <RadialGradient id="heat" cx="50%" cy="50%" rx="50%" ry="50%">
-                <Stop offset="0%" stopColor="#dc000086" stopOpacity="0.95" />
-                <Stop offset="28%" stopColor="#ff2f00a7" stopOpacity="0.82" />
-                <Stop offset="58%" stopColor="#ff7b009a" stopOpacity="0.55" />
-                <Stop offset="82%" stopColor="#ffd000a1" stopOpacity="0.28" />
-                <Stop offset="100%" stopColor="#ffe6006f" stopOpacity="0" />
+              {/* Luźno / spokojnie — łagodny zielono-szmaragdowy gradient */}
+              <RadialGradient id="heatCalm" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#10B981" stopOpacity="0.62" />
+                <Stop offset="38%" stopColor="#34D399" stopOpacity="0.44" />
+                <Stop offset="74%" stopColor="#6EE7B7" stopOpacity="0.22" />
+                <Stop offset="100%" stopColor="#A7F3D0" stopOpacity="0" />
               </RadialGradient>
-              <RadialGradient id="heatCore" cx="50%" cy="50%" rx="50%" ry="50%">
-                <Stop offset="0%" stopColor="#b900007a" stopOpacity="0.95" />
-                <Stop offset="55%" stopColor="#ff11007a" stopOpacity="0.65" />
-                <Stop offset="100%" stopColor="#FF4500" stopOpacity="0" />
+              {/* Umiarkowany ruch — ciepły żółto-bursztynowy gradient (bez czerwieni) */}
+              <RadialGradient id="heatModerate" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#F59E0B" stopOpacity="0.68" />
+                <Stop offset="36%" stopColor="#FBBF24" stopOpacity="0.50" />
+                <Stop offset="72%" stopColor="#FDE047" stopOpacity="0.25" />
+                <Stop offset="100%" stopColor="#FEF08A" stopOpacity="0" />
+              </RadialGradient>
+              {/* Zatłoczone / za dużo ludzi — intensywny czerwony gradient ostrzegawczy */}
+              <RadialGradient id="heatCrowded" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#DC2626" stopOpacity="0.88" />
+                <Stop offset="32%" stopColor="#EF4444" stopOpacity="0.72" />
+                <Stop offset="64%" stopColor="#F97316" stopOpacity="0.45" />
+                <Stop offset="86%" stopColor="#FBBF24" stopOpacity="0.20" />
+                <Stop offset="100%" stopColor="#FDE047" stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="heatCrowdedCore" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#991B1B" stopOpacity="0.88" />
+                <Stop offset="55%" stopColor="#DC2626" stopOpacity="0.55" />
+                <Stop offset="100%" stopColor="#EF4444" stopOpacity="0" />
               </RadialGradient>
             </Defs>
             {showHeat
-              ? heat.map((h) => (
-                  <React.Fragment key={h.id}>
-                    <Circle cx={h.x} cy={h.y} r={h.r} fill="url(#heat)" opacity={h.o} />
-                    {h.hot ? (
-                      <Circle
-                        cx={h.x}
-                        cy={h.y}
-                        r={h.r * 0.52}
-                        fill="url(#heatCore)"
-                        opacity={0.9}
-                      />
-                    ) : null}
-                  </React.Fragment>
-                ))
+              ? heat.map((h) => {
+                  const gradId =
+                    h.level === 'crowded'
+                      ? 'url(#heatCrowded)'
+                      : h.level === 'moderate'
+                        ? 'url(#heatModerate)'
+                        : 'url(#heatCalm)';
+                  return (
+                    <React.Fragment key={h.id}>
+                      <Circle cx={h.x} cy={h.y} r={h.r} fill={gradId} opacity={h.o} />
+                      {h.level === 'crowded' ? (
+                        <Circle
+                          cx={h.x}
+                          cy={h.y}
+                          r={h.r * 0.48}
+                          fill="url(#heatCrowdedCore)"
+                          opacity={0.85}
+                        />
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
               : null}
             {screenPolylines.map((pl) => {
               const strokeW = pl.faint ? 4.5 : pl.selected ? 10 : 7.5;
@@ -988,6 +1066,39 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             </Pressable>
           );
         })}
+
+        {pickedPoint
+          ? (() => {
+              const pt = toScreen(pickedPoint);
+              return (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.markerHit,
+                    { left: pt.x - 20, top: pt.y - 22, zIndex: 90 },
+                  ]}
+                >
+                  <View style={[styles.markerLabel, { backgroundColor: colors.brick }]}>
+                    <Text style={styles.markerLabelText} numberOfLines={1}>
+                      Wybrane miejsce
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.pin,
+                      {
+                        backgroundColor: colors.brick,
+                        borderColor: '#FFFFFF',
+                        transform: [{ scale: 1.25 }],
+                      },
+                    ]}
+                  >
+                    <Ionicons name="location" size={17} color="#FFFFFF" />
+                  </View>
+                </View>
+              );
+            })()
+          : null}
       </View>
 
       {/* Przyciski sterowania mapą */}

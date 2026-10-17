@@ -11,31 +11,15 @@ import type { NotificationPrefs } from '../types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-const PREF_LABELS: { key: keyof NotificationPrefs; label: string; desc: string; icon: React.ComponentProps<typeof Ionicons>['name'] }[] = [
-  {
-    key: 'authorityReplies',
-    label: 'Odpowiedzi władz miasta (Urząd / MZD)',
-    desc: 'Zmiany statusu Twoich wniosków, skarg i zgłoszeń obywatelskich',
-    icon: 'megaphone-outline',
-  },
-  {
-    key: 'transitAlerts',
-    label: 'Alerty MZK i utrudnienia w ruchu',
-    desc: 'Zweryfikowane awarie tramwajów, objazdy i korki w Toruniu',
-    icon: 'bus-outline',
-  },
-  {
-    key: 'partnerDiscounts',
-    label: 'Nowe zniżki od lokalnych firm',
-    desc: 'Promocje restauracji, usług i przedsiębiorstw dla podatników w Toruniu',
-    icon: 'pricetag-outline',
-  },
-  {
-    key: 'eventReminders',
-    label: 'Przypomnienia o moich wydarzeniach',
-    desc: 'Powiadomienia przed wydarzeniami, na które masz rezerwację',
-    icon: 'calendar-outline',
-  },
+const PREF_LABELS: {
+  key: keyof NotificationPrefs;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+}[] = [
+  { key: 'authorityReplies', label: 'Odpowiedzi Urzędu Miasta', icon: 'megaphone-outline' },
+  { key: 'transitAlerts', label: 'Alerty MZK i ruch drogowy', icon: 'bus-outline' },
+  { key: 'partnerDiscounts', label: 'Nowe zniżki w mieście', icon: 'pricetag-outline' },
+  { key: 'eventReminders', label: 'Przypomnienia o wydarzeniach', icon: 'calendar-outline' },
 ];
 
 export function AuthSheet() {
@@ -43,14 +27,13 @@ export function AuthSheet() {
   const visible = !!sheet;
   const mode = user ? 'account' : sheet?.mode ?? 'login';
 
-  const title =
-    user
-      ? 'Panel mieszkańca i powiadomienia'
-      : mode === 'account'
-        ? 'Powiadomienia i konto'
-        : mode === 'register'
-          ? 'Załóż konto mieszkańca'
-          : 'Panel logowania';
+  const title = user
+    ? 'Profil mieszkańca'
+    : mode === 'account'
+      ? 'Profil i powiadomienia'
+      : mode === 'register'
+        ? 'Załóż konto'
+        : 'Logowanie';
 
   return (
     <Sheet visible={visible} onClose={closeAuth} title={title}>
@@ -58,11 +41,14 @@ export function AuthSheet() {
         <AccountView />
       ) : (
         <View>
+          <PitProfileCard />
+
           {sheet?.reason ? (
             <View style={{ marginBottom: spacing.md }}>
               <InlineNotice kind="info" text={sheet.reason} />
             </View>
           ) : null}
+
           <View style={styles.tabs} accessibilityRole="tablist">
             {(
               [
@@ -89,11 +75,52 @@ export function AuthSheet() {
           ) : mode === 'register' ? (
             <RegisterForm />
           ) : (
-            <NotificationsPanel onAskLogin={() => openAuth('login')} />
+            <NotificationsPanel />
           )}
         </View>
       )}
     </Sheet>
+  );
+}
+
+/** Przełącznik rozliczania podatków PIT w Toruniu bezpośrednio w profilu. */
+function PitProfileCard() {
+  const { taxVerified, setTaxVerified } = useAppData();
+  const { showToast } = useToast();
+
+  const toggle = () => {
+    const next = !taxVerified;
+    setTaxVerified(next);
+    showToast(
+      next ? 'Potwierdzono rozliczanie PIT w Toruniu' : 'Wyłączono status podatnika PIT',
+      next ? 'success' : 'info',
+    );
+  };
+
+  return (
+    <Pressable
+      onPress={toggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: taxVerified }}
+      style={[styles.pitCard, taxVerified && styles.pitCardActive]}
+    >
+      <Ionicons
+        name={taxVerified ? 'shield-checkmark' : 'id-card-outline'}
+        size={20}
+        color={taxVerified ? colors.success : colors.brick}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pitCardTitle}>Rozliczam PIT w Toruniu</Text>
+        <Text style={styles.pitCardSub}>
+          {taxVerified ? 'Zniżki miejskie i kody są odblokowane' : 'Kliknij, aby aktywować zniżki miejskie'}
+        </Text>
+      </View>
+      <Ionicons
+        name={taxVerified ? 'checkbox' : 'square-outline'}
+        size={22}
+        color={taxVerified ? colors.success : colors.muted}
+      />
+    </Pressable>
   );
 }
 
@@ -134,13 +161,6 @@ function LoginForm() {
 
   return (
     <View>
-      <View style={styles.loginHintBox}>
-        <Ionicons name="notifications-circle-outline" size={22} color={colors.river} />
-        <Text style={styles.loginHintText}>
-          Zaloguj się, aby odbierać spersonalizowane powiadomienia z Urzędu Miasta, alerty MZK oraz zarządzać swoimi zgłoszeniami i rezerwacjami.
-        </Text>
-      </View>
-
       <TextField
         label="E-mail"
         icon="mail-outline"
@@ -166,7 +186,7 @@ function LoginForm() {
       {formError ? <InlineNotice kind="error" text={formError} /> : null}
       <Button label="Zaloguj się" onPress={submit} loading={busy} style={{ marginTop: spacing.sm }} />
       <Button
-        label="Wejdź na szybkie konto demo (Ania Demo)"
+        label="Konto demo"
         icon="flash-outline"
         variant="secondary"
         onPress={demo}
@@ -250,13 +270,12 @@ function RegisterForm() {
         onSubmitEditing={submit}
       />
       {formError ? <InlineNotice kind="error" text={formError} /> : null}
-      <Button label="Utwórz konto mieszkańca" onPress={submit} loading={busy} style={{ marginTop: spacing.sm }} />
+      <Button label="Utwórz konto" onPress={submit} loading={busy} style={{ marginTop: spacing.sm }} />
     </View>
   );
 }
 
-function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
-  const { user } = useAuth();
+function NotificationsPanel() {
   const {
     notifications,
     unreadNotificationCount,
@@ -275,21 +294,11 @@ function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
 
   return (
     <View>
-      {!user && onAskLogin ? (
-        <View style={styles.loginHintBox}>
-          <Ionicons name="person-circle-outline" size={20} color={colors.brick} />
-          <Text style={styles.loginHintText}>
-            Zaloguj się, aby przypisać powiadomienia i odpowiedzi Urzędu Miasta do swojego profilu.
-          </Text>
-          <Button label="Zaloguj" small onPress={onAskLogin} />
-        </View>
-      ) : null}
-
       <View style={styles.notifHeaderRow}>
-        <Text style={font.h3}>Powiadomienia dla Ciebie</Text>
+        <Text style={font.h3}>Powiadomienia</Text>
         {unreadNotificationCount > 0 ? (
           <Pressable onPress={markAllNotificationsRead}>
-            <Text style={styles.markReadLink}>Oznacz jako przeczytane ({unreadNotificationCount})</Text>
+            <Text style={styles.markReadLink}>Przeczytane ({unreadNotificationCount})</Text>
           </Pressable>
         ) : null}
       </View>
@@ -304,7 +313,7 @@ function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
               style={[styles.notifCard, !n.read && styles.notifCardUnread]}
             >
               <View style={[styles.notifIconWrap, { backgroundColor: km.bg }]}>
-                <Ionicons name={km.icon} size={17} color={km.color} />
+                <Ionicons name={km.icon} size={16} color={km.color} />
               </View>
               <View style={{ flex: 1 }}>
                 <View style={styles.notifTitleRow}>
@@ -313,7 +322,9 @@ function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
                   </Text>
                   {!n.read ? <View style={styles.unreadDot} /> : null}
                 </View>
-                <Text style={styles.notifBody}>{n.body}</Text>
+                <Text style={styles.notifBody} numberOfLines={2}>
+                  {n.body}
+                </Text>
                 <Text style={styles.notifTime}>{formatAgo(n.createdAt)}</Text>
               </View>
             </Pressable>
@@ -321,8 +332,8 @@ function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
         })}
       </View>
 
-      <Text style={[font.h3, { marginBottom: spacing.sm }]}>Ustawienia powiadomień użytkownika</Text>
-      <View style={{ gap: 8 }}>
+      <Text style={[font.h3, { marginBottom: spacing.sm }]}>Ustawienia alertów</Text>
+      <View style={{ gap: 6 }}>
         {PREF_LABELS.map((pref) => {
           const enabled = notificationPrefs[pref.key];
           return (
@@ -331,14 +342,11 @@ function NotificationsPanel({ onAskLogin }: { onAskLogin?: () => void }) {
               onPress={() => toggleNotificationPref(pref.key)}
               style={styles.prefRow}
             >
-              <Ionicons name={pref.icon} size={18} color={enabled ? colors.river : colors.muted} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.prefTitle}>{pref.label}</Text>
-                <Text style={styles.prefDesc}>{pref.desc}</Text>
-              </View>
+              <Ionicons name={pref.icon} size={17} color={enabled ? colors.river : colors.muted} />
+              <Text style={styles.prefTitle}>{pref.label}</Text>
               <Ionicons
                 name={enabled ? 'checkbox' : 'square-outline'}
-                size={22}
+                size={20}
                 color={enabled ? colors.brick : colors.muted}
               />
             </Pressable>
@@ -353,7 +361,7 @@ function AccountView() {
   const { user, logout, closeAuth } = useAuth();
   const { myBookings, events, savedOffers, isInterested, civicMessages, unreadNotificationCount } = useAppData();
   const { showToast } = useToast();
-  const [subTab, setSubTab] = useState<'notifications' | 'profile'>('notifications');
+  const [subTab, setSubTab] = useState<'notifications' | 'profile'>('profile');
 
   if (!user) return null;
 
@@ -378,25 +386,27 @@ function AccountView() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={font.h3}>{user.name}</Text>
-          <Text style={styles.email}>{user.email} · Konto mieszkańca Torunia</Text>
+          <Text style={styles.email}>{user.email}</Text>
         </View>
       </View>
 
+      <PitProfileCard />
+
       <View style={styles.tabs}>
+        <Pressable
+          onPress={() => setSubTab('profile')}
+          style={[styles.tab, subTab === 'profile' && styles.tabActive]}
+        >
+          <Text style={[styles.tabText, subTab === 'profile' && { color: colors.ink, fontWeight: '600' }]}>
+            Aktywność
+          </Text>
+        </Pressable>
         <Pressable
           onPress={() => setSubTab('notifications')}
           style={[styles.tab, subTab === 'notifications' && styles.tabActive]}
         >
           <Text style={[styles.tabText, subTab === 'notifications' && { color: colors.ink, fontWeight: '600' }]}>
             Powiadomienia {unreadNotificationCount > 0 ? `(${unreadNotificationCount})` : ''}
-          </Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setSubTab('profile')}
-          style={[styles.tab, subTab === 'profile' && styles.tabActive]}
-        >
-          <Text style={[styles.tabText, subTab === 'profile' && { color: colors.ink, fontWeight: '600' }]}>
-            Moja aktywność
           </Text>
         </Pressable>
       </View>
@@ -406,45 +416,24 @@ function AccountView() {
       ) : (
         <View>
           <View style={styles.stats}>
-            <Stat n={booked.length} label="Rezerwacje" />
+            <Stat n={booked.length} label="Bilety" />
             <Stat n={interestedCount} label="Wydarzenia" />
             <Stat n={savedOffers.length} label="Zniżki" />
-            <Stat n={myCivic.length} label="Pisma do władz" />
+            <Stat n={myCivic.length} label="Pisma" />
           </View>
 
           {booked.length > 0 ? (
             <>
-              <Text style={[font.h3, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>Moje rezerwacje</Text>
+              <Text style={[font.h3, { marginTop: spacing.md, marginBottom: spacing.xs }]}>Rezerwacje</Text>
               {booked.map(({ b, e }) => (
                 <View key={b.eventId} style={styles.booking}>
-                  <Ionicons name="ticket-outline" size={18} color={colors.brick} />
+                  <Ionicons name="ticket-outline" size={17} color={colors.brick} />
                   <View style={{ flex: 1 }}>
                     <Text style={font.bodyBold} numberOfLines={1}>
                       {e!.title}
                     </Text>
                     <Text style={font.small}>
-                      {formatDateTime(e!.startsAt)} · kod {b.code}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </>
-          ) : null}
-
-          {myCivic.length > 0 ? (
-            <>
-              <Text style={[font.h3, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>
-                Moje pisma do władz miasta
-              </Text>
-              {myCivic.map((m) => (
-                <View key={m.id} style={styles.booking}>
-                  <Ionicons name="megaphone-outline" size={18} color={colors.river} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={font.bodyBold} numberOfLines={1}>
-                      {m.title}
-                    </Text>
-                    <Text style={font.small}>
-                      {m.referenceCode} · {m.statusLabel}
+                      {formatDateTime(e!.startsAt)} · {b.code}
                     </Text>
                   </View>
                 </View>
@@ -455,7 +444,7 @@ function AccountView() {
       )}
 
       <Button
-        label="Wyloguj się"
+        label="Wyloguj"
         variant="danger"
         style={{ marginTop: spacing.lg }}
         onPress={async () => {
@@ -478,6 +467,31 @@ function Stat({ n, label }: { n: number; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  pitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: spacing.md,
+  },
+  pitCardActive: {
+    backgroundColor: colors.successSoft,
+    borderColor: '#BFE3CD',
+  },
+  pitCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pitCardSub: {
+    fontSize: 12,
+    color: colors.inkSoft,
+    marginTop: 1,
+  },
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.cream,
@@ -488,32 +502,16 @@ const styles = StyleSheet.create({
   tab: { flex: 1, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: radius.sm },
   tabActive: { backgroundColor: colors.surface },
   tabText: { fontWeight: '500', color: colors.muted, fontSize: 13 },
-  loginHintBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: colors.cream,
-    borderWidth: 1,
-    borderColor: colors.line,
-    marginBottom: spacing.md,
-  },
-  loginHintText: {
-    ...font.small,
-    color: colors.inkSoft,
-    flex: 1,
-  },
   profile: { flexDirection: 'row', gap: spacing.md, alignItems: 'center', marginBottom: spacing.md },
   bigAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.brickSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bigAvatarText: { color: colors.brickDark, fontSize: 16, fontWeight: '700' },
+  bigAvatarText: { color: colors.brickDark, fontSize: 15, fontWeight: '700' },
   email: { ...font.small, color: colors.muted },
   stats: { flexDirection: 'row', gap: spacing.xs },
   stat: {
@@ -560,8 +558,8 @@ const styles = StyleSheet.create({
     borderColor: '#E5BFB8',
   },
   notifIconWrap: {
-    width: 34,
-    height: 34,
+    width: 32,
+    height: 32,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -593,13 +591,14 @@ const styles = StyleSheet.create({
   notifTime: {
     ...font.tiny,
     color: colors.muted,
-    marginTop: 4,
+    marginTop: 3,
   },
   prefRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    padding: spacing.sm,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
     borderRadius: radius.md,
     backgroundColor: colors.cream,
     borderWidth: 1,
@@ -609,10 +608,6 @@ const styles = StyleSheet.create({
     ...font.small,
     fontWeight: '600',
     color: colors.ink,
-  },
-  prefDesc: {
-    fontSize: 11,
-    color: colors.muted,
-    marginTop: 1,
+    flex: 1,
   },
 });

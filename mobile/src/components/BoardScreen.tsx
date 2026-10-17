@@ -59,7 +59,6 @@ export interface BoardFilterOption {
 function BoardCard({
   item,
   selected,
-  onSelect,
   onShowOnMap,
 }: {
   item: BoardItem;
@@ -67,64 +66,55 @@ function BoardCard({
   onSelect: () => void;
   onShowOnMap: () => void;
 }) {
-  const isVerifiedSegment = item.source === 'sample' && item.path.length >= 2;
   return (
     <Pressable
       onPress={onShowOnMap}
       style={({ pressed }) => [
         styles.card,
         selected && { borderColor: item.color, backgroundColor: '#FAFBFD' },
-        pressed && { opacity: 0.94 },
+        pressed && { opacity: 0.92 },
       ]}
     >
       <View style={styles.topRow}>
         <View style={styles.badges}>
           {item.lines?.map((l) => (
             <View key={l} style={styles.lineBadge}>
-              <Text style={styles.lineText}>Linia {l}</Text>
+              <Text style={styles.lineText}>L{l}</Text>
             </View>
           ))}
-          <Badge label={item.typeLabel} color={item.color} bg="#F3F4F6" />
-          {isVerifiedSegment ? (
-            <Badge
-              label={`Odcinek ${item.lengthLabel}`}
-              color={colors.brickDark}
-              bg={colors.brickSoft}
-              icon="checkmark-circle-outline"
-            />
-          ) : (
-            <Badge
-              label={item.lengthLabel}
-              color={colors.inkSoft}
-              bg={colors.cream}
-              icon="location-outline"
-            />
-          )}
+          <Badge label={item.typeLabel} color={item.color} bg={`${item.color}16`} icon={item.icon} />
         </View>
-        <Text style={styles.timeText}>{formatAgo(item.reportedAt)}</Text>
+        <View style={[styles.impactPill, { backgroundColor: `${item.color}14` }]}>
+          <Text style={[styles.impactPillText, { color: item.color }]} numberOfLines={1}>
+            {item.impact}
+          </Text>
+        </View>
       </View>
 
       <Text style={styles.title} numberOfLines={1}>
         {item.title}
       </Text>
-      <Text style={styles.whereText} numberOfLines={1}>
-        {item.where}
-      </Text>
 
-      <Text style={styles.desc} numberOfLines={selected ? 4 : 2}>
+      <View style={styles.whereRow}>
+        <Ionicons name="location" size={12} color={item.color} />
+        <Text style={styles.whereText} numberOfLines={1}>
+          {item.where} · {item.lengthLabel}
+        </Text>
+      </View>
+
+      <Text style={styles.desc} numberOfLines={selected ? 3 : 1}>
         {item.description}
       </Text>
 
       <View style={styles.footerRow}>
-        <Text style={[styles.impactText, { color: item.color }]} numberOfLines={1}>
-          {item.impact}
-        </Text>
-        <Text style={styles.dot}>·</Text>
         <Text style={styles.statusText} numberOfLines={1}>
-          {item.status}
+          {item.status} · {formatAgo(item.reportedAt)}
         </Text>
         <View style={{ flex: 1 }} />
-        <Button label="Pokaż na mapie" icon="location-outline" variant="ghost" small onPress={onSelect} />
+        <View style={styles.mapHintPill}>
+          <Ionicons name="locate-outline" size={13} color={colors.inkSoft} />
+          <Text style={styles.mapHintText}>Mapa</Text>
+        </View>
       </View>
     </Pressable>
   );
@@ -620,23 +610,51 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+    gap: 8,
   },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, flex: 1 },
-  timeText: { ...font.small, color: colors.muted, marginLeft: 8 },
+  impactPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    maxWidth: '46%',
+  },
+  impactPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
   lineBadge: {
     backgroundColor: colors.river,
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 6,
   },
-  lineText: { color: '#fff', fontWeight: '600', fontSize: 11 },
+  lineText: { color: '#fff', fontWeight: '700', fontSize: 11 },
   title: { ...font.h3, color: colors.ink },
-  whereText: { ...font.small, color: colors.inkSoft, marginTop: 2 },
-  desc: { ...font.body, color: colors.inkSoft, marginTop: 6 },
-  footerRow: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, gap: 6 },
-  impactText: { ...font.small, fontWeight: '600', flexShrink: 1 },
-  dot: { color: colors.muted, fontSize: 12 },
-  statusText: { ...font.small, color: colors.muted, flexShrink: 1 },
+  whereRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  whereText: { fontSize: 12, fontWeight: '600', color: colors.inkSoft, flex: 1 },
+  desc: { ...font.small, color: colors.muted, marginTop: 5 },
+  footerRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8, gap: 6 },
+  statusText: { fontSize: 11, fontWeight: '500', color: colors.muted, flexShrink: 1 },
+  mapHintPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.cream,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+  },
+  mapHintText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkSoft,
+  },
   filterGroup: { marginBottom: spacing.lg },
   filterGroupTitle: { ...font.bodyBold, color: colors.ink, marginBottom: 8 },
   filterWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },

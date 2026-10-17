@@ -2,21 +2,21 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, font, radius, spacing } from '../theme';
+import { colors, spacing } from '../theme';
 import { useAuth } from '../state/AuthContext';
 import { useAppData } from '../state/AppDataContext';
 
 export function AccountButton() {
   const { user, openAuth } = useAuth();
-  const { unreadNotificationCount } = useAppData();
+  const { unreadNotificationCount, taxVerified } = useAppData();
 
   return (
     <View style={styles.rightRow}>
       <Pressable
         onPress={() => openAuth('account')}
         accessibilityRole="button"
-        accessibilityLabel={`Powiadomienia (${unreadNotificationCount} nieprzeczytanych)`}
-        style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.78 }]}
+        accessibilityLabel={`Powiadomienia (${unreadNotificationCount})`}
+        style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.78 }]}
       >
         <Ionicons
           name={unreadNotificationCount > 0 ? 'notifications' : 'notifications-outline'}
@@ -30,45 +30,28 @@ export function AccountButton() {
         ) : null}
       </Pressable>
 
-      {!user ? (
-        <Pressable
-          onPress={() => openAuth('login')}
-          accessibilityRole="button"
-          accessibilityLabel="Zaloguj się lub otwórz panel użytkownika"
-          style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.78 }]}
-        >
-          <Ionicons name="person-outline" size={15} color={colors.ink} />
-          <Text style={styles.loginText}>Zaloguj</Text>
-        </Pressable>
-      ) : (
-        <Pressable
-          onPress={() => openAuth('account')}
-          accessibilityRole="button"
-          accessibilityLabel={`Panel użytkownika: ${user.name}`}
-          style={({ pressed }) => [styles.avatarPill, pressed && { opacity: 0.8 }]}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {user.name
-                .split(' ')
-                .map((p) => p[0])
-                .slice(0, 2)
-                .join('')
-                .toUpperCase()}
-            </Text>
-          </View>
-          <Text style={styles.userName} numberOfLines={1}>
-            {user.name.split(' ')[0]}
-          </Text>
-        </Pressable>
-      )}
+      <Pressable
+        onPress={() => openAuth(user ? 'account' : 'login')}
+        accessibilityRole="button"
+        accessibilityLabel={user ? `Profil: ${user.name}` : 'Profil i logowanie'}
+        style={({ pressed }) => [
+          styles.iconBtn,
+          (user || taxVerified) && styles.iconBtnActive,
+          pressed && { opacity: 0.8 },
+        ]}
+      >
+        <Ionicons
+          name={user ? 'person' : 'person-outline'}
+          size={18}
+          color={user || taxVerified ? colors.brick : colors.ink}
+        />
+      </Pressable>
     </View>
   );
 }
 
 export function ScreenHeader({
   title,
-  subtitle,
 }: {
   title: string;
   subtitle?: string;
@@ -76,18 +59,11 @@ export function ScreenHeader({
 }) {
   const insets = useSafeAreaInsets();
   return (
-    <View style={[styles.header, { paddingTop: insets.top + spacing.sm }]}>
+    <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <View style={styles.brandDot} />
-      <View style={{ flex: 1 }}>
-        <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
+      <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
+        {title}
+      </Text>
       <AccountButton />
     </View>
   );
@@ -97,35 +73,44 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: 8,
     paddingHorizontal: spacing.lg,
-    paddingBottom: spacing.sm,
+    paddingBottom: 10,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
   },
   brandDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: colors.brick,
   },
-  title: { ...font.h2, color: colors.ink },
-  subtitle: { ...font.small, color: colors.muted, marginTop: 1 },
+  title: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '800',
+    letterSpacing: -0.4,
+    color: colors.ink,
+  },
   rightRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  bellBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.cream,
     borderWidth: 1,
     borderColor: colors.line,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  iconBtnActive: {
+    backgroundColor: colors.brickSoft,
+    borderColor: '#EAD2CE',
   },
   bellBadge: {
     position: 'absolute',
@@ -146,36 +131,4 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
   },
-  loginBtn: {
-    height: 34,
-    paddingHorizontal: 12,
-    borderRadius: radius.pill,
-    backgroundColor: colors.cream,
-    borderWidth: 1,
-    borderColor: colors.line,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  loginText: { color: colors.ink, fontWeight: '600', fontSize: 13 },
-  avatarPill: {
-    height: 34,
-    paddingLeft: 4,
-    paddingRight: 10,
-    borderRadius: radius.pill,
-    backgroundColor: colors.brickSoft,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  avatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.brick,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: { color: '#fff', fontWeight: '700', fontSize: 11 },
-  userName: { color: colors.brickDark, fontWeight: '600', fontSize: 13, maxWidth: 90 },
 });

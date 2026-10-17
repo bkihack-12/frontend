@@ -29,31 +29,32 @@ export const colors = {
 
 export const spacing = { xs: 4, sm: 8, md: 12, lg: 16, xl: 22, xxl: 28 };
 
-export const radius = { sm: 8, md: 12, lg: 16, pill: 999 };
+export const radius = { sm: 10, md: 14, lg: 20, xl: 24, pill: 999 };
 
 export const font = {
-  h1: { fontSize: 22, fontWeight: '700' as const, letterSpacing: -0.2 },
-  h2: { fontSize: 18, fontWeight: '700' as const, letterSpacing: -0.2 },
-  h3: { fontSize: 15, fontWeight: '600' as const },
+  hero: { fontSize: 26, fontWeight: '900' as const, letterSpacing: -0.8 },
+  h1: { fontSize: 22, fontWeight: '800' as const, letterSpacing: -0.4 },
+  h2: { fontSize: 18, fontWeight: '700' as const, letterSpacing: -0.3 },
+  h3: { fontSize: 15, fontWeight: '700' as const, letterSpacing: -0.2 },
   body: { fontSize: 14, fontWeight: '400' as const, lineHeight: 20 },
-  bodyBold: { fontSize: 14, fontWeight: '600' as const, lineHeight: 20 },
-  small: { fontSize: 12, fontWeight: '500' as const, lineHeight: 17 },
+  bodyBold: { fontSize: 14, fontWeight: '600' as const, lineHeight: 19 },
+  small: { fontSize: 12, fontWeight: '500' as const, lineHeight: 16 },
   tiny: { fontSize: 11, fontWeight: '600' as const, letterSpacing: 0.1 },
 };
 
 export const shadow = {
   card: {
     shadowColor: '#0F172A',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.035,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
     elevation: 1,
   },
   float: {
     shadowColor: '#0F172A',
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
     elevation: 5,
   },
 };
