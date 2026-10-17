@@ -18,6 +18,7 @@ import {
   View,
 } from 'react-native';
 import Svg, { Circle, Defs, Path, Polyline, RadialGradient, Stop } from 'react-native-svg';
+import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import type { CityEvent, MapPoint, TransitStop } from '../types';
 import { CATEGORY_META } from '../data/events';
@@ -25,14 +26,63 @@ import { DEMO_USER_LOCATION, LatLng, TORUN_CENTER, metersPerPixel, project, unpr
 import { colors, font, radius, shadow, spacing, TOUCH } from '../theme';
 
 /**
- * Rzeczywiste kafelki OpenStreetMap + wbudowany wektorowy podkład Torunia (Wisła, mosty,
- * główne arterie i dzielnice), dzięki czemu mapa jest zawsze czytelna (również offline).
+ * Podkład wektorowy OpenFreeMap (MapLibre GL JS - styl Liberty) + wbudowany podkład
+ * wektorowy Torunia (Wisła, główne arterie i dzielnice) jako natychmiastowy fallback.
+ * Nie wymaga klucza API i nie podlega blokadom 403 tile.openstreetmap.org.
  */
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const MIN_ZOOM = 11.5;
 const MAX_ZOOM = 18;
 const DEFAULT_ZOOM = 13.7;
-const TILE = 256;
+
+const OPENFREEMAP_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #EEF1F5; }
+    .maplibregl-ctrl-attrib, .maplibregl-ctrl { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var pending = { lng: ${TORUN_CENTER.lng}, lat: ${TORUN_CENTER.lat}, zoom: ${DEFAULT_ZOOM - 1} };
+    var map = null;
+    function init() {
+      if (!window.maplibregl) { setTimeout(init, 40); return; }
+      map = new maplibregl.Map({
+        container: 'map',
+        style: '${OPENFREEMAP_STYLE}',
+        center: [pending.lng, pending.lat],
+        zoom: pending.zoom,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0
+      });
+      map.on('load', function() {
+        map.jumpTo({ center: [pending.lng, pending.lat], zoom: pending.zoom });
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage('loaded');
+        }
+      });
+    }
+    window.__setView = function(lng, lat, zoom) {
+      pending = { lng: lng, lat: lat, zoom: zoom };
+      if (map) {
+        map.jumpTo({ center: [lng, lat], zoom: zoom });
+      }
+    };
+    window.addEventListener('resize', function() {
+      if (map) map.resize();
+    });
+    init();
+  </script>
+</body>
+</html>`;
 
 const BOUNDS = { minLat: 52.95, maxLat: 53.08, minLng: 18.48, maxLng: 18.74 };
 
@@ -185,12 +235,144 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const animRef = useRef<number | null>(null);
 
   const [tilesLoaded, setTilesLoaded] = useState(0);
+  const webViewRef = useRef<WebView | null>(null);
+  const webMapContainerRef = useRef<React.ComponentRef<typeof View>>(null);
+  const webMapRef = useRef<{
+    jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+    resize: () => void;
+    remove: () => void;
+  } | null>(null);
 
-  const apply = useCallback((v: View_) => {
-    const c = clampView(v);
-    viewRef.current = c;
-    setView(c);
+  const syncBaseMap = useCallback((c: View_) => {
+    const center = unproject(c.cx, c.cy, 0);
+    const mlZoom = c.zoom - 1;
+    if (Platform.OS === 'web') {
+      webMapRef.current?.jumpTo({ center: [center.lng, center.lat], zoom: mlZoom });
+    } else {
+      webViewRef.current?.injectJavaScript(
+        `window.__setView && window.__setView(${center.lng},${center.lat},${mlZoom});true;`,
+      );
+    }
   }, []);
+
+  const apply = useCallback(
+    (v: View_) => {
+      const c = clampView(v);
+      viewRef.current = c;
+      syncBaseMap(c);
+      setView(c);
+    },
+    [syncBaseMap],
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const host = webMapContainerRef.current as unknown as HTMLElement | null;
+    if (!host || typeof document === 'undefined') return;
+
+    if (!document.getElementById('maplibre-gl-css')) {
+      const link = document.createElement('link');
+      link.id = 'maplibre-gl-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
+      document.head.appendChild(link);
+    }
+
+    if (!document.getElementById('maplibre-gl-inline-fix')) {
+      const styleEl = document.createElement('style');
+      styleEl.id = 'maplibre-gl-inline-fix';
+      styleEl.textContent = `
+        .maplibregl-map { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
+        .maplibregl-canvas-container, .maplibregl-canvas { width: 100% !important; height: 100% !important; display: block !important; }
+        .maplibregl-ctrl-attrib, .maplibregl-ctrl { display: none !important; }
+      `;
+      document.head.appendChild(styleEl);
+    }
+
+    host.innerHTML = '';
+    const mapDiv = document.createElement('div');
+    mapDiv.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;overflow:hidden;';
+    host.appendChild(mapDiv);
+
+    let cancelled = false;
+    let ro: ResizeObserver | null = null;
+    type MLMap = {
+      jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+      resize: () => void;
+      remove: () => void;
+      on: (ev: string, cb: () => void) => void;
+    };
+    const mountMap = () => {
+      if (cancelled) return;
+      const ml = (
+        window as unknown as {
+          maplibregl?: { Map: new (opts: Record<string, unknown>) => MLMap };
+        }
+      ).maplibregl;
+      if (!ml) {
+        setTimeout(mountMap, 50);
+        return;
+      }
+      if (mapDiv.clientWidth === 0 || mapDiv.clientHeight === 0) {
+        setTimeout(mountMap, 50);
+        return;
+      }
+      const center = unproject(viewRef.current.cx, viewRef.current.cy, 0);
+      const map = new ml.Map({
+        container: mapDiv,
+        style: OPENFREEMAP_STYLE,
+        center: [center.lng, center.lat],
+        zoom: viewRef.current.zoom - 1,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0,
+      });
+      webMapRef.current = map;
+      map.resize();
+      if (typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => {
+          map.resize();
+          syncBaseMap(viewRef.current);
+        });
+        ro.observe(mapDiv);
+      }
+      map.on('load', () => {
+        if (!cancelled) {
+          map.resize();
+          syncBaseMap(viewRef.current);
+          setTilesLoaded((n) => n + 1);
+        }
+      });
+    };
+
+    if (
+      !(window as unknown as { maplibregl?: unknown }).maplibregl &&
+      !document.getElementById('maplibre-gl-js')
+    ) {
+      const script = document.createElement('script');
+      script.id = 'maplibre-gl-js';
+      script.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';
+      script.async = true;
+      script.onload = mountMap;
+      document.head.appendChild(script);
+    } else {
+      mountMap();
+    }
+
+    return () => {
+      cancelled = true;
+      ro?.disconnect();
+      webMapRef.current?.remove();
+      webMapRef.current = null;
+    };
+  }, [syncBaseMap]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && size.w > 0 && size.h > 0) {
+      webMapRef.current?.resize();
+      syncBaseMap(viewRef.current);
+    }
+  }, [size.w, size.h, syncBaseMap]);
 
   const cancelAnim = useCallback(() => {
     if (animRef.current !== null) {
@@ -383,37 +565,6 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     [size.w, size.h, view.cx, view.cy, scale],
   );
 
-  const tiles = useMemo(() => {
-    if (!size.w) return [];
-    const tz = Math.min(18, Math.max(0, Math.round(view.zoom)));
-    const k = Math.pow(2, view.zoom - tz);
-    const ts = TILE * k;
-    const ctx = view.cx * Math.pow(2, tz);
-    const cty = view.cy * Math.pow(2, tz);
-    const minX = Math.floor((ctx - size.w / 2 / k) / TILE);
-    const maxX = Math.floor((ctx + size.w / 2 / k) / TILE);
-    const minY = Math.floor((cty - size.h / 2 / k) / TILE);
-    const maxY = Math.floor((cty + size.h / 2 / k) / TILE);
-    const max = Math.pow(2, tz);
-    const out: { key: string; url: string; left: number; top: number; size: number }[] = [];
-    for (let x = minX; x <= maxX; x++) {
-      for (let y = minY; y <= maxY; y++) {
-        if (x < 0 || y < 0 || x >= max || y >= max) continue;
-        const url = TILE_URL.replace('{z}', String(tz))
-          .replace('{x}', String(x))
-          .replace('{y}', String(y));
-        out.push({
-          key: `${tz}/${x}/${y}`,
-          url,
-          left: size.w / 2 + (x * TILE - ctx) * k,
-          top: size.h / 2 + (y * TILE - cty) * k,
-          size: ts,
-        });
-      }
-    }
-    return out;
-  }, [view.cx, view.cy, view.zoom, size.w, size.h]);
-
   /* ----- Event clusters ----- */
   const { clusters, singles } = useMemo(() => {
     const CELL = 44;
@@ -564,23 +715,31 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         </View>
       ) : null}
 
-      {/* Rzeczywisty podkład OpenStreetMap */}
+      {/* Podkład wektorowy OpenFreeMap (MapLibre GL JS) */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {tiles.map((t) => (
-          <View
-            key={t.key}
-            style={[styles.tile, { left: t.left, top: t.top, width: t.size + 0.6, height: t.size + 0.6 }]}
-          >
-            <Image
-              source={{ uri: t.url }}
-              style={StyleSheet.absoluteFill}
-              onLoad={() => setTilesLoaded((n) => n + 1)}
-              fadeDuration={0}
-            />
-          </View>
-        ))}
+        {Platform.OS === 'web' ? (
+          <View ref={webMapContainerRef} style={StyleSheet.absoluteFill} />
+        ) : (
+          <WebView
+            ref={webViewRef}
+            source={{ html: OPENFREEMAP_HTML, baseUrl: 'https://tiles.openfreemap.org' }}
+            style={styles.webview}
+            originWhitelist={['*']}
+            javaScriptEnabled
+            domStorageEnabled
+            scrollEnabled={false}
+            bounces={false}
+            overScrollMode="never"
+            androidLayerType="hardware"
+            onLoadEnd={() => syncBaseMap(viewRef.current)}
+            onMessage={() => {
+              syncBaseMap(viewRef.current);
+              setTilesLoaded((n) => n + 1);
+            }}
+          />
+        )}
       </View>
-      <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+      <Text style={styles.attribution}>© OpenFreeMap · © OpenMapTiles · © OpenStreetMap</Text>
 
       {/* Warstwa aktywności + odcinki ulic / linii komunikacji */}
       {size.w > 0 && (showHeat || screenPolylines.length > 0) ? (
@@ -884,8 +1043,8 @@ function MapButton({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#EEF1F5', overflow: 'hidden' },
-  tile: {
-    position: 'absolute',
+  webview: {
+    flex: 1,
     backgroundColor: 'transparent',
   },
   attribution: {
