@@ -17,6 +17,17 @@ const TYPES: Record<
   other: { label: 'Inne', icon: 'information-circle-outline', color: '#6B7280' },
 };
 
+const TRANSIT_LINE_COLORS: Record<string, string> = {
+  '1': '#D9485F',
+  '2': '#2563EB',
+  '4': '#0F766E',
+  '11': '#7C3AED',
+  '14': '#EA580C',
+  '22': '#0891B2',
+  '25': '#65A30D',
+  '27': '#C2410C',
+};
+
 export default function TransportScreen() {
   const { notices, addNotice } = useAppData();
   const { showToast } = useToast();
@@ -30,8 +41,8 @@ export default function TransportScreen() {
         typeLabel: TYPES[n.type].label,
         icon: TYPES[n.type].icon,
         color: TYPES[n.type].color,
-        title: `${n.lines.length > 1 ? 'Linie' : 'Linia'} ${n.lines.join(', ')} — ${TYPES[n.type].label.toLowerCase()}`,
-        where: `${n.stop} · ${n.location}`,
+        title: n.stop,
+        where: n.location,
         lines: n.lines,
         reportedAt: n.reportedAt,
         severity: n.severity,
@@ -42,7 +53,9 @@ export default function TransportScreen() {
         author: n.author,
         lat: n.lat,
         lng: n.lng,
-        path: n.path,
+        // Komunikat może dotyczyć tylko fragmentu linii; bez geokodowania przystanków
+        // nie rysujemy zgadywanego odcinka. Pełne przebiegi pochodzą z GTFS poniżej.
+        path: [],
         lengthLabel: n.lengthLabel,
       })),
     [notices],
@@ -53,9 +66,11 @@ export default function TransportScreen() {
       TRANSIT_REFERENCE_ROUTES.map((r) => ({
         id: `ref-${r.line}`,
         path: r.path,
-        color: r.color,
+        color: TRANSIT_LINE_COLORS[r.line] ?? r.color,
         label: `Linia ${r.line} (${r.lengthLabel})`,
-        faint: true,
+        // Trasy GTFS są zweryfikowanym przebiegiem linii, więc muszą być
+        // widoczne ponad podkładem OSM, a nie traktowane jak tło.
+        faint: false,
       })),
     [],
   );
@@ -66,14 +81,16 @@ export default function TransportScreen() {
     <>
       <BoardScreen
         title="Transport"
-        subtitle="Mapa linii MZK i utrudnień"
+        subtitle="Linie i utrudnienia MZK"
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },
-          ...typeKeys.map((k) => ({ key: k, label: TYPES[k].label })),
+          ...typeKeys.map((k) => ({ key: k, label: TYPES[k].label, icon: TYPES[k].icon })),
         ]}
         lineFilters={TRANSIT_LINES}
         extraPolylines={extraPolylines}
+        showItemPaths={false}
+        mapMode="transit"
         fabLabel="Zgłoś problem"
         onFab={() => setReportOpen(true)}
         emptyTitle="Brak komunikatów"

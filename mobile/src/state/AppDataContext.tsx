@@ -66,7 +66,7 @@ const makeCode = () =>
   `TOR-${Math.random().toString(36).slice(2, 7).toUpperCase()}${Math.floor(Math.random() * 90 + 10)}`;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Dopasowuje przybliżone współrzędne i odcinek ulicy w Toruniu na podstawie wpisanej nazwy. */
+/** Dopasowuje przybliżone współrzędne zgłoszenia na podstawie wpisanej nazwy. */
 function inferTorunRoadGeometry(locationText: string) {
   const q = locationText.toLowerCase();
   if (q.includes('most') || q.includes('piłsud') || q.includes('rapack')) {
@@ -263,7 +263,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         author: user?.name ?? 'Gość',
         lat: geo.lat,
         lng: geo.lng,
-        path: geo.path,
+        // Nie rysujemy heurystycznej geometrii jako trasy. Odcinek musi zostać zweryfikowany.
+        path: [],
         lengthLabel: lengthLabel?.trim() || '500 m',
       };
       update((p) => ({ ...p, userIncidents: [item, ...p.userIncidents] }));
@@ -291,7 +292,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         author: user?.name ?? 'Gość',
         lat: geo.lat,
         lng: geo.lng,
-        path: geo.path,
+        path: [],
         lengthLabel: '1,2 km trasy',
       };
       update((p) => ({ ...p, userNotices: [item, ...p.userNotices] }));
@@ -303,7 +304,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const incidents = useMemo(
     () =>
       [...data.userIncidents, ...TRAFFIC_INCIDENTS].map((i) =>
-        i.path && i.lat ? i : { ...i, ...inferTorunRoadGeometry(i.location), lengthLabel: i.lengthLabel ?? '600 m' },
+        i.source === 'user'
+          ? { ...i, path: [] }
+          : i.path && i.lat
+            ? i
+            : { ...i, ...inferTorunRoadGeometry(i.location), lengthLabel: i.lengthLabel ?? '600 m' },
       ),
     [data.userIncidents],
   );
@@ -311,7 +316,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const notices = useMemo(
     () =>
       [...data.userNotices, ...TRANSIT_NOTICES].map((n) =>
-        n.path && n.lat ? n : { ...n, ...inferTorunRoadGeometry(n.stop), lengthLabel: n.lengthLabel ?? '1,2 km trasy' },
+        n.source === 'user'
+          ? { ...n, path: [] }
+          : n.path && n.lat
+            ? n
+            : { ...n, ...inferTorunRoadGeometry(n.stop), lengthLabel: n.lengthLabel ?? '1,2 km trasy' },
       ),
     [data.userNotices],
   );

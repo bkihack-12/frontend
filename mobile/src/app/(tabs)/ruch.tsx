@@ -10,10 +10,10 @@ const TYPES: Record<
   IncidentType,
   { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }
 > = {
-  jam: { label: 'Korki', icon: 'car-outline', color: '#C94A4A' },
-  roadworks: { label: 'Roboty drogowe', icon: 'construct-outline', color: '#C4842D' },
-  accident: { label: 'Kolizje', icon: 'warning-outline', color: '#A63A3A' },
-  other: { label: 'Inne', icon: 'information-circle-outline', color: '#3B6990' },
+  jam: { label: 'Korki', icon: 'car-outline', color: '#D97706' },
+  roadworks: { label: 'Roboty drogowe', icon: 'construct-outline', color: '#B45309' },
+  accident: { label: 'Kolizje', icon: 'warning-outline', color: '#DC2626' },
+  other: { label: 'Inne', icon: 'information-circle-outline', color: '#2563EB' },
 };
 
 export default function RuchScreen() {
@@ -50,15 +50,17 @@ export default function RuchScreen() {
     <>
       <BoardScreen
         title="Ruch drogowy"
-        subtitle="Mapa zatorów i utrudnień w Toruniu"
+        subtitle="Korki i utrudnienia w Toruniu"
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },
           ...(Object.keys(TYPES) as IncidentType[]).map((k) => ({
             key: k,
             label: TYPES[k].label,
+            icon: TYPES[k].icon,
           })),
         ]}
+        mapMode="traffic"
         fabLabel="Zgłoś utrudnienie"
         onFab={() => setReportOpen(true)}
         emptyTitle="Brak utrudnień"
