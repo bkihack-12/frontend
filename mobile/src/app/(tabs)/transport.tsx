@@ -90,6 +90,7 @@ export default function TransportScreen() {
         lineFilters={TRANSIT_LINES}
         extraPolylines={extraPolylines}
         showItemPaths={false}
+        mapMode="transit"
         fabLabel="Zgłoś problem"
         onFab={() => setReportOpen(true)}
         emptyTitle="Brak komunikatów"

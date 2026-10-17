@@ -10,10 +10,10 @@ const TYPES: Record<
   IncidentType,
   { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }
 > = {
-  jam: { label: 'Korki', icon: 'car-outline', color: '#C94A4A' },
-  roadworks: { label: 'Roboty drogowe', icon: 'construct-outline', color: '#C4842D' },
-  accident: { label: 'Kolizje', icon: 'warning-outline', color: '#A63A3A' },
-  other: { label: 'Inne', icon: 'information-circle-outline', color: '#3B6990' },
+  jam: { label: 'Korki', icon: 'car-outline', color: '#D97706' },
+  roadworks: { label: 'Roboty drogowe', icon: 'construct-outline', color: '#B45309' },
+  accident: { label: 'Kolizje', icon: 'warning-outline', color: '#DC2626' },
+  other: { label: 'Inne', icon: 'information-circle-outline', color: '#2563EB' },
 };
 
 export default function RuchScreen() {
@@ -59,6 +59,7 @@ export default function RuchScreen() {
             label: TYPES[k].label,
           })),
         ]}
+        mapMode="traffic"
         fabLabel="Zgłoś utrudnienie"
         onFab={() => setReportOpen(true)}
         emptyTitle="Brak utrudnień"
