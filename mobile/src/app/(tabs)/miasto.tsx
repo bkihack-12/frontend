@@ -74,8 +74,9 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.cream },
   contentArea: { flex: 1 },
   scrollContent: {
-    padding: spacing.md,
-    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: 48,
     gap: spacing.md,
   },
   columnList: {

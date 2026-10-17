@@ -324,7 +324,7 @@ export function Sheet({
           style={[
             styles.sheet,
             fullHeight && { height: '90%' },
-            { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+            { paddingBottom: Math.max(insets.bottom + spacing.lg, 32) },
           ]}
         >
           <View style={styles.sheetHandle} />
@@ -337,14 +337,14 @@ export function Sheet({
               style={styles.closeBtn}
               accessibilityRole="button"
               accessibilityLabel="Zamknij"
-              hitSlop={6}
+              hitSlop={10}
             >
-              <Ionicons name="close" size={18} color={colors.inkSoft} />
+              <Ionicons name="close" size={19} color={colors.inkSoft} />
             </Pressable>
           </View>
           <ScrollView
             style={{ flexShrink: 1 }}
-            contentContainerStyle={{ paddingBottom: spacing.md }}
+            contentContainerStyle={{ paddingBottom: spacing.xl }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
@@ -383,6 +383,7 @@ export function CornerFilterButton({
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={count ? `${label} (${count})` : label}
       style={({ pressed }) => [
@@ -394,7 +395,7 @@ export function CornerFilterButton({
     >
       <Ionicons
         name="options-outline"
-        size={17}
+        size={18}
         color={isActive ? '#FFFFFF' : colors.ink}
       />
       <Text style={[styles.cornerFilterText, isActive && { color: '#FFFFFF' }]}>{label}</Text>
@@ -502,14 +503,14 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     maxHeight: '88%',
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.md,
   },
   sheetHandle: {
     alignSelf: 'center',
-    width: 36,
+    width: 40,
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.line,
@@ -518,9 +519,9 @@ const styles = StyleSheet.create({
   sheetHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
   sheetTitle: { ...font.h2, color: colors.ink, flex: 1 },
   closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: colors.cream,
     alignItems: 'center',
     justifyContent: 'center',
@@ -533,15 +534,15 @@ const styles = StyleSheet.create({
     top: spacing.md,
     left: spacing.md,
     zIndex: 45,
-    height: 38,
-    paddingHorizontal: 14,
+    height: 44,
+    paddingHorizontal: 16,
     borderRadius: radius.pill,
     backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderColor: colors.line,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     ...shadow.float,
   },
   cornerFilterBtnActive: {

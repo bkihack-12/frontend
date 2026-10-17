@@ -46,6 +46,7 @@ export function EventDetailSheet({
     isInterested,
     toggleInterested,
     deleteEvent,
+    canDeleteEvent,
   } = useAppData();
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState('');
@@ -62,8 +63,9 @@ export function EventDetailSheet({
   const booking = getBooking(event.id);
   const interested = isInterested(event.id);
   const count = interestedCount(event);
-  const isTicket = event.action === 'ticket';
+  const isTicket = !event.isFree || event.action === 'ticket';
   const discountLabel = eventDiscountTag(event);
+  const canDelete = canDeleteEvent(event);
 
   const handleDelete = () => {
     deleteEvent(event.id);
@@ -71,14 +73,25 @@ export function EventDetailSheet({
     showToast('Usunięto wydarzenie', 'info');
   };
 
+  const handleToggleInterested = () => {
+    const now = toggleInterested(event.id);
+    showToast(
+      now ? 'Dodano do Moich wydarzeń (wstęp wolny)' : 'Usunięto z Moich wydarzeń',
+      now ? 'success' : 'info',
+    );
+  };
+
   const doBook = async () => {
-    if (!user) return;
     setStep('busy');
     setError('');
     const res = await bookEvent(event.id, user);
     if (res.ok) {
       setStep('idle');
-      showToast(isTicket ? 'Bilet zarezerwowany' : 'Zapisano na wydarzenie');
+      showToast(
+        isTicket
+          ? 'Kupiono bilet — dodano do Moich wydarzeń'
+          : 'Zapisano — dodano do Moich wydarzeń',
+      );
     } else {
       setStep('idle');
       setError(res.error);
@@ -86,25 +99,21 @@ export function EventDetailSheet({
   };
 
   const doCancel = async () => {
-    if (!user) return;
     setStep('cancelBusy');
     await cancelBooking(event.id, user);
     setStep('idle');
-    showToast('Anulowano rezerwację', 'info');
+    showToast(isTicket ? 'Zwrócono bilet' : 'Anulowano rezerwację', 'info');
   };
 
   let primaryAction: React.ReactNode;
-  if (event.type === 'open') {
+  if (!isTicket && event.type === 'open') {
     primaryAction = (
       <Button
-        label={interested ? 'Zainteresowany ✓' : 'Interesuje mnie'}
+        label={interested ? 'W moich wydarzeniach ✓' : 'Interesuje mnie'}
         icon={interested ? 'heart' : 'heart-outline'}
         variant={interested ? 'primary' : 'secondary'}
         style={{ flex: 1 }}
-        onPress={() => {
-          const now = toggleInterested(event.id);
-          showToast(now ? 'Dodano do zainteresowań' : 'Usunięto z zainteresowań', now ? 'success' : 'info');
-        }}
+        onPress={handleToggleInterested}
       />
     );
   } else if (booking) {
@@ -119,7 +128,7 @@ export function EventDetailSheet({
             style={{ flex: 1 }}
           />
           <Button
-            label="Odwołaj rezerwację"
+            label={isTicket ? 'Zwróć bilet' : 'Odwołaj zapis'}
             variant="danger"
             onPress={doCancel}
             loading={step === 'cancelBusy'}
@@ -138,18 +147,6 @@ export function EventDetailSheet({
     primaryAction = (
       <Button label="Brak wolnych miejsc" variant="secondary" disabled onPress={() => {}} style={{ flex: 1 }} />
     );
-  } else if (!user) {
-    primaryAction = (
-      <View style={{ flex: 1, flexDirection: 'row', gap: spacing.sm }}>
-        <Button label="Zaloguj i zarezerwuj" onPress={() => onNeedAuth('login', event)} style={{ flex: 1 }} />
-        <Button
-          label="Załóż konto"
-          variant="secondary"
-          onPress={() => onNeedAuth('register', event)}
-          style={{ flex: 1 }}
-        />
-      </View>
-    );
   } else if (step === 'confirm' || step === 'busy') {
     primaryAction = (
       <View style={{ flex: 1, flexDirection: 'row', gap: spacing.sm }}>
@@ -160,13 +157,18 @@ export function EventDetailSheet({
           disabled={step === 'busy'}
           style={{ flex: 1 }}
         />
-        <Button label="Potwierdź rezerwację" onPress={doBook} loading={step === 'busy'} style={{ flex: 2 }} />
+        <Button
+          label={isTicket ? 'Potwierdź zakup biletu' : 'Potwierdź zapis'}
+          onPress={doBook}
+          loading={step === 'busy'}
+          style={{ flex: 2 }}
+        />
       </View>
     );
   } else {
     primaryAction = (
       <Button
-        label={actionLabel(event)}
+        label={isTicket ? `Kup bilet${event.priceZl ? ` · ${formatPrice(event.priceZl)}` : ''}` : actionLabel(event)}
         icon={isTicket ? 'ticket-outline' : 'checkmark-circle-outline'}
         style={{ flex: 1 }}
         onPress={() => setStep('confirm')}
@@ -176,16 +178,36 @@ export function EventDetailSheet({
 
   const footer = (
     <View style={styles.footerRow}>
+      {!isTicket && event.type !== 'open' ? (
+        <Pressable
+          onPress={handleToggleInterested}
+          accessibilityRole="button"
+          accessibilityLabel={interested ? 'Usuń z Moich wydarzeń' : 'Interesuje mnie'}
+          style={({ pressed }) => [
+            styles.heartBtn,
+            interested && styles.heartBtnActive,
+            pressed && { opacity: 0.8 },
+          ]}
+        >
+          <Ionicons
+            name={interested ? 'heart' : 'heart-outline'}
+            size={20}
+            color={interested ? colors.brick : colors.inkSoft}
+          />
+        </Pressable>
+      ) : null}
       {primaryAction}
-      <Pressable
-        onPress={handleDelete}
-        accessibilityRole="button"
-        accessibilityLabel="Usuń wydarzenie"
-        style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.8 }]}
-      >
-        <Ionicons name="trash-outline" size={18} color={colors.danger} />
-        <Text style={styles.deleteBtnText}>Usuń</Text>
-      </Pressable>
+      {canDelete ? (
+        <Pressable
+          onPress={handleDelete}
+          accessibilityRole="button"
+          accessibilityLabel="Usuń wydarzenie"
+          style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.8 }]}
+        >
+          <Ionicons name="trash-outline" size={18} color={colors.danger} />
+          <Text style={styles.deleteBtnText}>Usuń</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 
@@ -238,8 +260,10 @@ export function EventDetailSheet({
 
       {booking ? (
         <View style={styles.bookedBanner}>
-          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
-          <Text style={styles.bookedText}>Rezerwacja aktywna · kod: {booking.code}</Text>
+          <Ionicons name={isTicket ? 'ticket' : 'checkmark-circle'} size={18} color={colors.success} />
+          <Text style={styles.bookedText}>
+            {isTicket ? 'Bilet aktywny' : 'Rezerwacja aktywna'} · kod: {booking.code}
+          </Text>
         </View>
       ) : null}
 
@@ -395,6 +419,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  heartBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heartBtnActive: {
+    backgroundColor: colors.brickSoft,
+    borderColor: '#E5BFB8',
   },
   deleteBtn: {
     height: 44,

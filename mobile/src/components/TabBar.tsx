@@ -42,10 +42,10 @@ export function TabBar(_props?: unknown) {
             accessibilityLabel={meta.label}
             style={styles.item}
           >
-            <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
+            <View style={styles.iconWrap}>
               <Ionicons
                 name={focused ? meta.iconActive : meta.icon}
-                size={21}
+                size={22}
                 color={focused ? colors.brick : colors.muted}
               />
             </View>
@@ -72,19 +72,15 @@ const styles = StyleSheet.create({
   item: {
     flex: 1,
     alignItems: 'center',
-    minHeight: 50,
+    minHeight: 52,
     justifyContent: 'center',
     gap: 2,
   },
   iconWrap: {
-    width: 44,
-    height: 30,
-    borderRadius: radius.pill,
+    width: 32,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  iconWrapActive: {
-    backgroundColor: colors.brickSoft,
   },
   labelActive: {
     fontSize: 11,

@@ -23,12 +23,21 @@ import { colors, font, radius, shadow, spacing } from '../../theme';
 import type { EventCategory } from '../../types';
 
 export default function SpolecznoscScreen() {
-  const { events, addEvent, deleteEvent, interestedCount, taxVerified } = useAppData();
+  const {
+    events,
+    addEvent,
+    deleteEvent,
+    canDeleteEvent,
+    isMyEvent,
+    interestedCount,
+    taxVerified,
+  } = useAppData();
   const { user, sheet, openAuth } = useAuth();
   const { showToast } = useToast();
 
   const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [onlyMyEvents, setOnlyMyEvents] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -49,7 +58,15 @@ export default function SpolecznoscScreen() {
   }, []);
 
   const all = useMemo(() => withDistance(events), [events]);
-  const filtered = useMemo(() => filterEvents(all, filters), [all, filters]);
+  const baseFiltered = useMemo(() => filterEvents(all, filters), [all, filters]);
+  const myEventsTotal = useMemo(
+    () => all.filter((e) => isMyEvent(e.id)).length,
+    [all, isMyEvent],
+  );
+  const filtered = useMemo(
+    () => (onlyMyEvents ? all.filter((e) => isMyEvent(e.id)) : baseFiltered),
+    [all, baseFiltered, onlyMyEvents, isMyEvent],
+  );
   const selected = useMemo(() => filtered.find((e) => e.id === selectedId) ?? null, [filtered, selectedId]);
   const detail = useMemo(() => all.find((e) => e.id === detailId) ?? null, [all, detailId]);
   const nFilters = activeFilterCount(filters);
@@ -142,11 +159,12 @@ export default function SpolecznoscScreen() {
 
             <Pressable
               onPress={startAddingEvent}
+              hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Dodaj wydarzenie"
               style={({ pressed }) => [styles.cornerAddBtn, pressed && { opacity: 0.88 }]}
             >
-              <Ionicons name="add-circle-outline" size={17} color="#FFFFFF" />
+              <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
               <Text style={styles.cornerAddText}>Dodaj wydarzenie</Text>
             </Pressable>
 
@@ -162,7 +180,18 @@ export default function SpolecznoscScreen() {
               onOpenEvent={(e) => setDetailId(e.id)}
               onShowOnMap={showOnMap}
               onClearSelection={() => setSelectedId(null)}
+              canDeleteEvent={canDeleteEvent}
+              onlyMyEvents={onlyMyEvents}
+              myEventsTotal={myEventsTotal}
+              onToggleOnlyMyEvents={() => {
+                setOnlyMyEvents((prev) => {
+                  const next = !prev;
+                  if (next) setPanelOpen(true);
+                  return next;
+                });
+              }}
               onDeleteEvent={(e) => {
+                if (!canDeleteEvent(e)) return;
                 deleteEvent(e.id);
                 if (selectedId === e.id) setSelectedId(null);
                 if (detailId === e.id) setDetailId(null);
@@ -391,13 +420,13 @@ const styles = StyleSheet.create({
     top: spacing.md,
     right: spacing.md,
     zIndex: 45,
-    height: 38,
-    paddingHorizontal: 14,
+    height: 44,
+    paddingHorizontal: 16,
     borderRadius: radius.pill,
     backgroundColor: colors.brick,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     ...shadow.float,
   },
   cornerAddText: {
