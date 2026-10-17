@@ -57,6 +57,7 @@ export default function RuchScreen() {
           ...(Object.keys(TYPES) as IncidentType[]).map((k) => ({
             key: k,
             label: TYPES[k].label,
+            icon: TYPES[k].icon,
           })),
         ]}
         mapMode="traffic"

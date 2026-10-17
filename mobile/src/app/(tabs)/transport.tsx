@@ -85,7 +85,7 @@ export default function TransportScreen() {
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },
-          ...typeKeys.map((k) => ({ key: k, label: TYPES[k].label })),
+          ...typeKeys.map((k) => ({ key: k, label: TYPES[k].label, icon: TYPES[k].icon })),
         ]}
         lineFilters={TRANSIT_LINES}
         extraPolylines={extraPolylines}

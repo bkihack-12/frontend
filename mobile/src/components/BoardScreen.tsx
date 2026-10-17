@@ -1,7 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import {
+  Animated,
+  FlatList,
+  Modal,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Chip, ChipRow, EmptyState, LoadingState } from './ui';
+import { Badge, EmptyState, LoadingState } from './ui';
 import { ScreenHeader } from './ScreenHeader';
 import { MapMarkerItem, MapPolylineItem, TorunMap, TorunMapHandle } from './TorunMap';
 import { formatAgo } from '../lib/format';
@@ -36,6 +45,93 @@ export interface BoardFilterOption {
   key: string;
   label: string;
   icon?: IconName;
+}
+
+function FilterDropdown({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: BoardFilterOption[];
+  onChange: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.key === value) ?? options[0];
+
+  return (
+    <>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${selected.label}`}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen(true)}
+        style={({ pressed }) => [styles.filterSelect, pressed && { opacity: 0.82 }]}
+      >
+        <Text style={styles.filterSelectLabel}>{label}</Text>
+        <Text style={styles.filterSelectValue} numberOfLines={1}>
+          {selected.label}
+        </Text>
+        <Ionicons name="chevron-down" size={15} color={colors.inkSoft} />
+      </Pressable>
+
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={styles.filterModalBackdrop} onPress={() => setOpen(false)}>
+          <Pressable style={styles.filterPanel} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.filterPanelHeader}>
+              <Text style={styles.filterPanelTitle}>{label}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Zamknij wybór filtra"
+                onPress={() => setOpen(false)}
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={22} color={colors.inkSoft} />
+              </Pressable>
+            </View>
+            <View style={styles.filterTiles}>
+              {options.map((option) => {
+                const isSelected = option.key === value;
+                return (
+                  <Pressable
+                    key={option.key}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => {
+                      onChange(option.key);
+                      setOpen(false);
+                    }}
+                    style={({ pressed }) => [
+                      styles.filterTile,
+                      isSelected && styles.filterTileSelected,
+                      pressed && { opacity: 0.8 },
+                    ]}
+                  >
+                    {option.icon ? (
+                      <Ionicons
+                        name={option.icon}
+                        size={17}
+                        color={isSelected ? colors.brick : colors.inkSoft}
+                        style={styles.filterTileIcon}
+                      />
+                    ) : null}
+                    <Text
+                      style={[styles.filterTileText, isSelected && styles.filterTileTextSelected]}
+                      numberOfLines={2}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
 }
 
 function BoardCard({
@@ -260,27 +356,20 @@ export function BoardScreen({
       <ScreenHeader title={title} subtitle={subtitle} />
 
       <View style={styles.filters}>
-        <ChipRow>
-          {typeFilters.map((f) => (
-            <Chip
-              key={f.key}
-              label={f.label}
-              icon={f.icon}
-              selected={type === f.key}
-              onPress={() => setType(f.key)}
+        <View style={styles.filterControls}>
+          <FilterDropdown label="Rodzaj" value={type} options={typeFilters} onChange={setType} />
+          {lineFilters ? (
+            <FilterDropdown
+              label="Linia"
+              value={line}
+              options={[
+                { key: 'all', label: 'Wszystkie linie' },
+                ...lineFilters.map((l) => ({ key: l, label: `Linia ${l}` })),
+              ]}
+              onChange={setLine}
             />
-          ))}
-        </ChipRow>
-        {lineFilters ? (
-          <View style={{ marginTop: 6 }}>
-            <ChipRow>
-              <Chip label="Wszystkie linie" selected={line === 'all'} onPress={() => setLine('all')} />
-              {lineFilters.map((l) => (
-                <Chip key={l} label={`Linia ${l}`} selected={line === l} onPress={() => setLine(l)} />
-              ))}
-            </ChipRow>
-          </View>
-        ) : null}
+          ) : null}
+        </View>
       </View>
 
       {loading ? (
@@ -372,10 +461,97 @@ export function BoardScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.cream },
   filters: {
-    paddingVertical: spacing.sm,
+    padding: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.line,
     backgroundColor: colors.surface,
+  },
+  filterControls: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  filterSelect: {
+    flex: 1,
+    minWidth: 0,
+    minHeight: 42,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  filterSelectLabel: {
+    ...font.tiny,
+    color: colors.muted,
+  },
+  filterSelectValue: {
+    flex: 1,
+    minWidth: 0,
+    ...font.small,
+    color: colors.ink,
+  },
+  filterModalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: colors.overlay,
+  },
+  filterPanel: {
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    backgroundColor: colors.surface,
+  },
+  filterPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.md,
+  },
+  filterPanelTitle: {
+    ...font.h2,
+    color: colors.ink,
+  },
+  filterTiles: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  filterTile: {
+    flexBasis: '31%',
+    flexGrow: 1,
+    minHeight: 56,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.cream,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  filterTileSelected: {
+    backgroundColor: colors.brickSoft,
+    borderColor: '#E5BFB8',
+  },
+  filterTileIcon: {
+    alignSelf: 'center',
+  },
+  filterTileText: {
+    ...font.small,
+    color: colors.inkSoft,
+    textAlign: 'center',
+  },
+  filterTileTextSelected: {
+    color: colors.brickDark,
+    fontWeight: '600',
   },
   mapWrap: {
     borderBottomWidth: 1,
