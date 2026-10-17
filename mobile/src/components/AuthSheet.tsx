@@ -273,7 +273,7 @@ function LoginForm() {
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder="anna@mojtorun.pl"
+        placeholder="anna@nasztorun.pl"
         error={errors.email}
       />
       <TextField

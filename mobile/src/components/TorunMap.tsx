@@ -50,7 +50,7 @@ const OPENFREEMAP_HTML = `<!DOCTYPE html>
 <body>
   <div id="map"></div>
   <script>
-    var pending = { lng: ${TORUN_CENTER.lng}, lat: ${TORUN_CENTER.lat}, zoom: ${DEFAULT_ZOOM - 1} };
+    var pending = { lng: ${TORUN_CENTER.lng}, lat: ${TORUN_CENTER.lat}, zoom: ${DEFAULT_ZOOM - 1}, bearing: 0 };
     var map = null;
     function init() {
       if (!window.maplibregl) { setTimeout(init, 40); return; }
@@ -59,21 +59,22 @@ const OPENFREEMAP_HTML = `<!DOCTYPE html>
         style: '${OPENFREEMAP_STYLE}',
         center: [pending.lng, pending.lat],
         zoom: pending.zoom,
+        bearing: pending.bearing || 0,
         interactive: false,
         attributionControl: false,
         fadeDuration: 0
       });
       map.on('load', function() {
-        map.jumpTo({ center: [pending.lng, pending.lat], zoom: pending.zoom });
+        map.jumpTo({ center: [pending.lng, pending.lat], zoom: pending.zoom, bearing: pending.bearing || 0 });
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage('loaded');
         }
       });
     }
-    window.__setView = function(lng, lat, zoom) {
-      pending = { lng: lng, lat: lat, zoom: zoom };
+    window.__setView = function(lng, lat, zoom, bearing) {
+      pending = { lng: lng, lat: lat, zoom: zoom, bearing: bearing || 0 };
       if (map) {
-        map.jumpTo({ center: [lng, lat], zoom: zoom });
+        map.jumpTo({ center: [lng, lat], zoom: zoom, bearing: bearing || 0 });
       }
     };
     window.addEventListener('resize', function() {
@@ -161,10 +162,17 @@ interface View_ {
   cx: number;
   cy: number;
   zoom: number;
+  bearing: number;
 }
 
 const clamp = (v: number, a: number, b: number) =>
   Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : (a + b) / 2;
+
+const normalizeBearing = (deg: number) => {
+  if (!Number.isFinite(deg)) return 0;
+  const wrapped = ((((deg + 180) % 360) + 360) % 360) - 180;
+  return Math.abs(wrapped) < 0.05 ? 0 : wrapped;
+};
 
 const DEFAULT_PROJECTED = project(TORUN_CENTER, 0);
 
@@ -174,19 +182,21 @@ function clampView(v: View_): View_ {
   const zoom = Number.isFinite(v.zoom) ? clamp(v.zoom, MIN_ZOOM, MAX_ZOOM) : DEFAULT_ZOOM;
   const cx = Number.isFinite(v.cx) ? clamp(v.cx, tl.x, br.x) : DEFAULT_PROJECTED.x;
   const cy = Number.isFinite(v.cy) ? clamp(v.cy, tl.y, br.y) : DEFAULT_PROJECTED.y;
-  return { zoom, cx, cy };
+  const bearing = normalizeBearing(v.bearing ?? 0);
+  return { zoom, cx, cy, bearing };
 }
 
-function viewFor(center: LatLng, zoom: number): View_ {
+function viewFor(center: LatLng, zoom: number, bearing = 0): View_ {
   const safeCenter =
     Number.isFinite(center?.lat) && Number.isFinite(center?.lng) ? center : TORUN_CENTER;
   const p = project(safeCenter, 0);
-  return clampView({ cx: p.x, cy: p.y, zoom });
+  return clampView({ cx: p.x, cy: p.y, zoom, bearing });
 }
 
 export interface TorunMapHandle {
   focusOn: (p: LatLng, zoom?: number) => void;
   recenter: () => void;
+  resetNorth: () => void;
 }
 
 interface Props {
@@ -231,7 +241,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   ref,
 ) {
   const [size, setSize] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<View_>(() => viewFor(TORUN_CENTER, DEFAULT_ZOOM));
+  const [view, setView] = useState<View_>(() => viewFor(TORUN_CENTER, DEFAULT_ZOOM, 0));
   const viewRef = useRef(view);
   const sizeRef = useRef(size);
   sizeRef.current = size;
@@ -244,7 +254,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const webViewRef = useRef<WebView | null>(null);
   const webMapContainerRef = useRef<React.ComponentRef<typeof View>>(null);
   const webMapRef = useRef<{
-    jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+    jumpTo: (opts: { center: [number, number]; zoom: number; bearing?: number }) => void;
     resize: () => void;
     remove: () => void;
   } | null>(null);
@@ -252,11 +262,12 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const syncBaseMap = useCallback((c: View_) => {
     const center = unproject(c.cx, c.cy, 0);
     const mlZoom = c.zoom - 1;
+    const bearing = c.bearing || 0;
     if (Platform.OS === 'web') {
-      webMapRef.current?.jumpTo({ center: [center.lng, center.lat], zoom: mlZoom });
+      webMapRef.current?.jumpTo({ center: [center.lng, center.lat], zoom: mlZoom, bearing });
     } else {
       webViewRef.current?.injectJavaScript(
-        `window.__setView && window.__setView(${center.lng},${center.lat},${mlZoom});true;`,
+        `window.__setView && window.__setView(${center.lng},${center.lat},${mlZoom},${bearing});true;`,
       );
     }
   }, []);
@@ -303,7 +314,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     let cancelled = false;
     let ro: ResizeObserver | null = null;
     type MLMap = {
-      jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+      jumpTo: (opts: { center: [number, number]; zoom: number; bearing?: number }) => void;
       resize: () => void;
       remove: () => void;
       on: (ev: string, cb: () => void) => void;
@@ -329,6 +340,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         style: OPENFREEMAP_STYLE,
         center: [center.lng, center.lat],
         zoom: viewRef.current.zoom - 1,
+        bearing: viewRef.current.bearing || 0,
         interactive: false,
         attributionControl: false,
         fadeDuration: 0,
@@ -392,6 +404,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       cancelAnim();
       const from = viewRef.current;
       const to = clampView(target);
+      const dBearing = normalizeBearing(to.bearing - from.bearing);
       const start = Date.now();
       const duration = 320;
       const step = () => {
@@ -401,6 +414,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           cx: from.cx + (to.cx - from.cx) * e,
           cy: from.cy + (to.cy - from.cy) * e,
           zoom: from.zoom + (to.zoom - from.zoom) * e,
+          bearing: normalizeBearing(from.bearing + dBearing * e),
         });
         animRef.current = t < 1 ? requestAnimationFrame(step) : null;
       };
@@ -414,8 +428,12 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   useImperativeHandle(
     ref,
     () => ({
-      focusOn: (p, zoom) => animateTo(viewFor(p, zoom ?? Math.max(viewRef.current.zoom, 14.6))),
-      recenter: () => animateTo(viewFor(TORUN_CENTER, DEFAULT_ZOOM)),
+      focusOn: (p, zoom) =>
+        animateTo(
+          viewFor(p, zoom ?? Math.max(viewRef.current.zoom, 14.6), viewRef.current.bearing),
+        ),
+      recenter: () => animateTo(viewFor(TORUN_CENTER, DEFAULT_ZOOM, 0)),
+      resetNorth: () => animateTo({ ...viewRef.current, bearing: 0 }),
     }),
     [animateTo],
   );
@@ -427,12 +445,25 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     const s2 = Math.pow(2, z2);
     const safeFx = Number.isFinite(fx) ? fx : 0;
     const safeFy = Number.isFinite(fy) ? fy : 0;
-    const wx = v.cx + safeFx / s1;
-    const wy = v.cy + safeFy / s1;
-    return { cx: wx - safeFx / s2, cy: wy - safeFy / s2, zoom: z2 };
+    const rad = ((v.bearing || 0) * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+    const rFx = safeFx * cos - safeFy * sin;
+    const rFy = safeFx * sin + safeFy * cos;
+    const wx = v.cx + rFx / s1;
+    const wy = v.cy + rFy / s1;
+    return { cx: wx - rFx / s2, cy: wy - rFy / s2, zoom: z2, bearing: v.bearing };
   }, []);
 
-  const gesture = useRef({ touches: 0, midX: 0, midY: 0, dist: 0, prevDx: 0, prevDy: 0 });
+  const gesture = useRef({
+    touches: 0,
+    midX: 0,
+    midY: 0,
+    dist: 0,
+    angle: 0,
+    prevDx: 0,
+    prevDy: 0,
+  });
 
   const readTouches = (e: GestureResponderEvent) => {
     const ne = e.nativeEvent as unknown as {
@@ -443,15 +474,19 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       clientY?: number;
       locationX?: number;
       locationY?: number;
+      shiftKey?: boolean;
+      altKey?: boolean;
+      buttons?: number;
     };
     const t = ne.touches;
     const getX = (obj?: { pageX?: number; clientX?: number }) =>
       obj?.pageX ?? obj?.clientX ?? ne.pageX ?? ne.clientX ?? ne.locationX ?? 0;
     const getY = (obj?: { pageY?: number; clientY?: number }) =>
       obj?.pageY ?? obj?.clientY ?? ne.pageY ?? ne.clientY ?? ne.locationY ?? 0;
+    const rotateMod = Boolean(ne.shiftKey || ne.altKey || ne.buttons === 2);
 
     if (!t || t.length === 0) {
-      return { n: 1, mx: getX(), my: getY(), dist: 0 };
+      return { n: 1, mx: getX(), my: getY(), dist: 0, angle: 0, rotateMod };
     }
     if (t.length >= 2) {
       const ax = getX(t[0]);
@@ -463,9 +498,11 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         mx: (ax + bx) / 2,
         my: (ay + by) / 2,
         dist: Math.hypot(ax - bx, ay - by),
+        angle: (Math.atan2(by - ay, bx - ax) * 180) / Math.PI,
+        rotateMod: false,
       };
     }
-    return { n: 1, mx: getX(t[0]), my: getY(t[0]), dist: 0 };
+    return { n: 1, mx: getX(t[0]), my: getY(t[0]), dist: 0, angle: 0, rotateMod };
   };
 
   const containerOffset = useRef({ x: 0, y: 0 });
@@ -519,6 +556,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             midX: r.mx,
             midY: r.my,
             dist: r.dist,
+            angle: r.angle,
             prevDx: gs.dx,
             prevDy: gs.dy,
           };
@@ -532,6 +570,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
               midX: r.mx,
               midY: r.my,
               dist: r.dist,
+              angle: r.angle,
               prevDx: gs.dx,
               prevDy: gs.dy,
             };
@@ -542,20 +581,40 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             const { w, h } = sizeRef.current;
             const fx = r.mx - (containerOffset.current.x + w / 2);
             const fy = r.my - (containerOffset.current.y + h / 2);
-            v = { ...v, ...zoomAround(Math.log2(r.dist / g.dist), fx, fy, v) };
+            const dAngle = normalizeBearing(r.angle - g.angle);
+            const nextBearing = normalizeBearing((v.bearing || 0) - dAngle);
+            v = { ...v, ...zoomAround(Math.log2(r.dist / g.dist), fx, fy, v), bearing: nextBearing };
             const s = Math.pow(2, v.zoom);
-            apply({ ...v, cx: v.cx - (r.mx - g.midX) / s, cy: v.cy - (r.my - g.midY) / s });
+            const ddx = r.mx - g.midX;
+            const ddy = r.my - g.midY;
+            const rad = (nextBearing * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const dWx = (ddx * cos - ddy * sin) / s;
+            const dWy = (ddx * sin + ddy * cos) / s;
+            apply({ ...v, cx: v.cx - dWx, cy: v.cy - dWy, bearing: nextBearing });
           } else {
             const ddx = gs.dx - g.prevDx;
             const ddy = gs.dy - g.prevDy;
-            const s = Math.pow(2, v.zoom);
-            apply({ ...v, cx: v.cx - ddx / s, cy: v.cy - ddy / s });
+            if (r.rotateMod) {
+              const nextBearing = normalizeBearing((v.bearing || 0) + ddx * 0.45);
+              apply({ ...v, bearing: nextBearing });
+            } else {
+              const s = Math.pow(2, v.zoom);
+              const rad = ((v.bearing || 0) * Math.PI) / 180;
+              const cos = Math.cos(rad);
+              const sin = Math.sin(rad);
+              const dWx = (ddx * cos - ddy * sin) / s;
+              const dWy = (ddx * sin + ddy * cos) / s;
+              apply({ ...v, cx: v.cx - dWx, cy: v.cy - dWy });
+            }
           }
           gesture.current = {
             touches: r.n,
             midX: r.mx,
             midY: r.my,
             dist: r.dist,
+            angle: r.angle,
             prevDx: gs.dx,
             prevDy: gs.dy,
           };
@@ -596,13 +655,22 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           const { w, h } = sizeRef.current;
           if (w <= 0 || h <= 0 || lx === undefined || ly === undefined) return;
 
-          /* Tryb zaznaczania punktu dla nowego wydarzenia */
-          if (onPickPointRef.current) {
+          const screenToLatLng = (sx: number, sy: number) => {
             const v = viewRef.current;
             const s = Math.pow(2, v.zoom);
-            const wx = v.cx + (lx - w / 2) / s;
-            const wy = v.cy + (ly - h / 2) / s;
-            const pt = unproject(wx, wy, 0);
+            const dx = sx - w / 2;
+            const dy = sy - h / 2;
+            const rad = ((v.bearing || 0) * Math.PI) / 180;
+            const cos = Math.cos(rad);
+            const sin = Math.sin(rad);
+            const wx = v.cx + (dx * cos - dy * sin) / s;
+            const wy = v.cy + (dx * sin + dy * cos) / s;
+            return unproject(wx, wy, 0);
+          };
+
+          /* Tryb zaznaczania punktu dla nowego wydarzenia */
+          if (onPickPointRef.current) {
+            const pt = screenToLatLng(lx, ly);
             if (Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) {
               onPickPointRef.current(pt);
             }
@@ -628,13 +696,14 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           // 2. Klastry wydarzeń
           for (const c of ht.clusters) {
             if (Math.hypot(c.x - lx, c.y - ly) <= 32) {
-              const s = Math.pow(2, viewRef.current.zoom);
-              const target = unproject(
-                viewRef.current.cx + (c.x - w / 2) / s,
-                viewRef.current.cy + (c.y - h / 2) / s,
-                0,
+              const target = screenToLatLng(c.x, c.y);
+              animateTo(
+                viewFor(
+                  target,
+                  Math.min(MAX_ZOOM, viewRef.current.zoom + 1.5),
+                  viewRef.current.bearing,
+                ),
               );
-              animateTo(viewFor(target, Math.min(MAX_ZOOM, viewRef.current.zoom + 1.5)));
               return;
             }
           }
@@ -744,14 +813,19 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         return { x: -9999, y: -9999 };
       }
       const w = project(p, 0);
-      const x = size.w / 2 + (w.x - view.cx) * scale;
-      const y = size.h / 2 + (w.y - view.cy) * scale;
+      const dx = (w.x - view.cx) * scale;
+      const dy = (w.y - view.cy) * scale;
+      const rad = ((view.bearing || 0) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const x = size.w / 2 + dx * cos + dy * sin;
+      const y = size.h / 2 - dx * sin + dy * cos;
       if (!Number.isFinite(x) || !Number.isFinite(y)) {
         return { x: -9999, y: -9999 };
       }
       return { x, y };
     },
-    [size.w, size.h, view.cx, view.cy, scale],
+    [size.w, size.h, view.cx, view.cy, view.bearing, scale],
   );
 
   /* ----- Event clusters ----- */
@@ -1154,12 +1228,19 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             key={`cl-${c.key}`}
             hitSlop={10}
             onPress={() => {
+              const dx = c.x - size.w / 2;
+              const dy = c.y - size.h / 2;
+              const rad = ((viewRef.current.bearing || 0) * Math.PI) / 180;
+              const cos = Math.cos(rad);
+              const sin = Math.sin(rad);
               const target = unproject(
-                (viewRef.current.cx + (c.x - size.w / 2) / scale) * Math.pow(2, 0),
-                (viewRef.current.cy + (c.y - size.h / 2) / scale) * Math.pow(2, 0),
+                viewRef.current.cx + (dx * cos - dy * sin) / scale,
+                viewRef.current.cy + (dx * sin + dy * cos) / scale,
                 0,
               );
-              animateTo(viewFor(target, Math.min(MAX_ZOOM, view.zoom + 1.5)));
+              animateTo(
+                viewFor(target, Math.min(MAX_ZOOM, view.zoom + 1.5), viewRef.current.bearing),
+              );
             }}
             style={[styles.clusterHit, { left: c.x - 27, top: c.y - 27 }]}
           >
@@ -1273,6 +1354,21 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       {/* Przyciski sterowania mapą */}
       {hideControls ? null : (
         <View style={[styles.controls, { bottom: bottomInset + spacing.sm }]} pointerEvents="box-none">
+          <CompassButton
+            bearing={view.bearing || 0}
+            onPress={() => animateTo({ ...viewRef.current, bearing: 0 })}
+          />
+          <MapButton
+            icon="sync-outline"
+            label="Zmień orientację mapy (obróć o 45°)"
+            active={Math.abs(view.bearing || 0) > 1}
+            onPress={() =>
+              animateTo({
+                ...viewRef.current,
+                bearing: normalizeBearing((viewRef.current.bearing || 0) + 45),
+              })
+            }
+          />
           {onToggleHeat ? (
             <MapButton
               icon="flame-outline"
@@ -1284,7 +1380,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           <MapButton
             icon="locate-outline"
             label="Wyśrodkuj na Toruniu"
-            onPress={() => animateTo(viewFor(TORUN_CENTER, DEFAULT_ZOOM))}
+            onPress={() => animateTo(viewFor(TORUN_CENTER, DEFAULT_ZOOM, 0))}
           />
           <MapButton icon="add" label="Przybliż" onPress={() => zoomBy(1)} />
           <MapButton icon="remove" label="Oddal" onPress={() => zoomBy(-1)} />
@@ -1293,6 +1389,51 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     </View>
   );
 });
+
+/** Ikona kompasu w stylu Google Maps — wskazuje północ i po kliknięciu przywraca orientację „Północ na górze”. */
+function CompassButton({
+  bearing,
+  onPress,
+}: {
+  bearing: number;
+  onPress: () => void;
+}) {
+  const isRotated = Math.abs(bearing) > 1;
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel="Przywróć orientację: Północ na górze"
+      style={({ pressed }) => [
+        styles.mapBtn,
+        isRotated && { borderColor: colors.brick, borderWidth: 1.5 },
+        pressed && { opacity: 0.85 },
+      ]}
+    >
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: [{ rotate: `${-bearing}deg` }],
+        }}
+      >
+        <Svg width={24} height={24} viewBox="0 0 24 24">
+          {/* Czerwona igła północna */}
+          <Path d="M12 2 L15.4 12 L8.6 12 Z" fill="#DC2626" />
+          {/* Ciemnoszara igła południowa */}
+          <Path d="M12 22 L15.4 12 L8.6 12 Z" fill="#64748B" />
+          <Circle cx="12" cy="12" r="2" fill="#FFFFFF" stroke="#1E293B" strokeWidth="1" />
+        </Svg>
+      </View>
+      <View style={styles.northBadge} pointerEvents="none">
+        <Text style={[styles.northBadgeText, isRotated && { color: colors.brick }]}>N</Text>
+      </View>
+    </Pressable>
+  );
+}
 
 function MapButton({
   icon,
@@ -1452,5 +1593,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.card,
+  },
+  northBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  northBadgeText: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#DC2626',
   },
 });

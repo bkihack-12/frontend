@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Mój Toruń",
-    "slug": "moj-torun",
-    "scheme": "mojtorun",
+    "name": "NaszToruń",
+    "slug": "nasz-torun",
+    "scheme": "nasztorun",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

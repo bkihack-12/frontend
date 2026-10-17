@@ -50,10 +50,12 @@ export function AccountButton() {
   );
 }
 
+export const APP_NAME = 'NaszToruń';
+
 export function ScreenHeader({
-  title,
+  title = APP_NAME,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
   compact?: boolean;
 }) {
@@ -62,7 +64,7 @@ export function ScreenHeader({
     <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
       <View style={styles.brandDot} />
       <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
-        {title}
+        {title || APP_NAME}
       </Text>
       <AccountButton />
     </View>

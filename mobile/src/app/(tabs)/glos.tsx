@@ -102,7 +102,7 @@ export default function GlosMieszkancaScreen() {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title="Głos" />
+      <ScreenHeader title="NaszToruń" />
 
       <View style={styles.contentArea}>
         <ScrollView

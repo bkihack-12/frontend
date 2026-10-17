@@ -291,9 +291,13 @@ export function BoardScreen({
   const panelStateRef = useRef({ panelOpen, peekH, openH });
   panelStateRef.current = { panelOpen, peekH, openH };
 
+  const scrollYRef = useRef(0);
+  const touchDragRef = useRef({ startY: 0, active: false });
+
   useEffect(() => {
+    if (!panelOpen) scrollYRef.current = 0;
     Animated.timing(height, { toValue: target, duration: 220, useNativeDriver: false }).start();
-  }, [target, height]);
+  }, [target, height, panelOpen]);
 
   const handlePan = useMemo(
     () =>
@@ -323,13 +327,19 @@ export function BoardScreen({
     [height],
   );
 
-  const previewSwipePan = useMemo(
+  const bodyPan = useMemo(
     () =>
       PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: (_e, gs) => Math.abs(gs.dy) > 5,
-        onMoveShouldSetPanResponderCapture: (_e, gs) =>
-          Math.abs(gs.dy) > 7 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onMoveShouldSetPanResponder: (_e, gs) => {
+          const { panelOpen: isOpen } = panelStateRef.current;
+          if (!isOpen) return Math.abs(gs.dy) > 7 && Math.abs(gs.dy) > Math.abs(gs.dx);
+          return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10;
+        },
+        onMoveShouldSetPanResponderCapture: (_e, gs) => {
+          const { panelOpen: isOpen } = panelStateRef.current;
+          if (!isOpen) return Math.abs(gs.dy) > 7 && Math.abs(gs.dy) > Math.abs(gs.dx);
+          return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10;
+        },
         onPanResponderMove: (_e, gs) => {
           const { panelOpen: isOpen, peekH: pH, openH: oH } = panelStateRef.current;
           const base = isOpen ? oH : pH;
@@ -374,7 +384,7 @@ export function BoardScreen({
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title={title} subtitle={subtitle} />
+      <ScreenHeader title="NaszToruń" subtitle={subtitle} />
 
       <View style={styles.mapArea} onLayout={(e) => setMapHeight(e.nativeEvent.layout.height)}>
         <TorunMap
@@ -405,7 +415,7 @@ export function BoardScreen({
           <Text style={styles.cornerReportText}>{fabLabel}</Text>
         </Pressable>
 
-        <Animated.View style={[styles.panel, { height }]}>
+        <Animated.View {...bodyPan.panHandlers} style={[styles.panel, { height }]}>
           <View
             {...handlePan.panHandlers}
             style={styles.handleArea}
@@ -444,6 +454,46 @@ export function BoardScreen({
                 contentContainerStyle={styles.list}
                 ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
                 showsVerticalScrollIndicator={false}
+                scrollEventThrottle={16}
+                bounces={false}
+                overScrollMode="never"
+                onScroll={(e) => {
+                  scrollYRef.current = e.nativeEvent.contentOffset.y;
+                }}
+                onTouchStart={(e) => {
+                  touchDragRef.current = {
+                    startY: e.nativeEvent.pageY ?? 0,
+                    active: scrollYRef.current <= 10,
+                  };
+                }}
+                onTouchMove={(e) => {
+                  const y = e.nativeEvent.pageY ?? 0;
+                  if (!touchDragRef.current.active) {
+                    if (scrollYRef.current <= 2) {
+                      touchDragRef.current = { startY: y, active: true };
+                    }
+                    return;
+                  }
+                  const dy = y - touchDragRef.current.startY;
+                  if (dy > 8) {
+                    const { peekH: pH, openH: oH } = panelStateRef.current;
+                    height.setValue(Math.max(pH, Math.min(oH, oH - dy)));
+                  }
+                }}
+                onTouchEnd={(e) => {
+                  if (!touchDragRef.current.active) return;
+                  const dy = (e.nativeEvent.pageY ?? 0) - touchDragRef.current.startY;
+                  touchDragRef.current.active = false;
+                  if (dy > 24) {
+                    setPanelOpen(false);
+                  } else if (dy > 0) {
+                    Animated.timing(height, {
+                      toValue: panelStateRef.current.openH,
+                      duration: 180,
+                      useNativeDriver: false,
+                    }).start();
+                  }
+                }}
                 renderItem={({ item }) => (
                   <BoardCard
                     item={item}
@@ -455,7 +505,7 @@ export function BoardScreen({
               />
             )
           ) : selectedItem ? (
-            <View {...previewSwipePan.panHandlers} style={styles.preview}>
+            <View style={styles.preview}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.previewTitle} numberOfLines={1}>
                   {selectedItem.title} · {selectedItem.lengthLabel}
@@ -479,7 +529,7 @@ export function BoardScreen({
               </Pressable>
             </View>
           ) : selectedStop ? (
-            <View {...previewSwipePan.panHandlers} style={styles.preview}>
+            <View style={styles.preview}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.previewTitle} numberOfLines={1}>
                   Przystanek: {selectedStop.name}
