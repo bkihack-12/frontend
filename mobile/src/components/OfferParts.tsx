@@ -1,92 +1,263 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Button, Card, MetaRow, Sheet } from './ui';
-import { KIND_META, OFFER_CATEGORY_LABEL } from '../data/offers';
+import { Button, Sheet } from './ui';
 import { formatLongDate } from '../lib/format';
 import type { CityOffer, ResidentBenefit } from '../types';
 import { useAppData } from '../state/AppDataContext';
+import { useAuth } from '../state/AuthContext';
 import { useToast } from '../state/ToastContext';
-import { colors, font, radius, spacing } from '../theme';
+import { colors, font, radius, shadow, spacing } from '../theme';
 
-export function ResidentBenefitsSection({ benefits }: { benefits: ResidentBenefit[] }) {
+export interface TaxpayerDeclaration {
+  fullName: string;
+  taxOffice: string;
+  address: string;
+  confirmed: boolean;
+}
+
+const BENEFIT_VISUAL: Record<string, { bg: string; fg: string }> = {
+  'ben-mzk': { bg: '#DBEAFE', fg: '#1D4ED8' },
+  'ben-kultura': { bg: '#FCE7F3', fg: '#BE185D' },
+  'ben-sport': { bg: '#D1FAE5', fg: '#047857' },
+  'ben-parking': { bg: '#EDE9FE', fg: '#6D28D9' },
+};
+
+/** Wyciąga samą wysokość zniżki (np. "−20%", "−35%", "2 w 1", "−30 min"). */
+export function extractDiscountValue(raw?: string): string {
+  if (!raw) return 'Zniżka';
+  const trimmed = raw.trim();
+  if (/^2\s*w\s*cenie\s*1$/i.test(trimmed)) return '2 w 1';
+  const rangeMatch = trimmed.match(/^(−?\d+%)\s*do\s*(−?\d+%)$/i);
+  if (rangeMatch) return rangeMatch[2];
+  const doMatch = trimmed.match(/^do\s+(−?\d+%)$/i);
+  if (doMatch) return doMatch[1];
+  const minMatch = trimmed.match(/^(\d+\s*min)/i);
+  if (minMatch) return `−${minMatch[1]}`;
+  const percentMatch = trimmed.match(/^([−-]\d+%)/);
+  if (percentMatch) return percentMatch[1];
+  return trimmed;
+}
+
+/** Skraca nazwę firmy do czystej, krótkiej formy na kafelek. */
+function shortCompanyName(business: string): string {
+  return business
+    .replace(/Naleśnikarnia\s+/i, '')
+    .replace(/Browar Staromiejski\s+/i, '')
+    .replace(/Manufaktura\s+/i, '')
+    .replace(/Salon Optyczny\s+/i, '')
+    .replace(/Księgarnia & Planszówki\s+/i, '')
+    .replace(/\s*·.*$/, '')
+    .replace(/\s+w Toruniu$/i, '')
+    .replace(/\s+Toruń$/i, '')
+    .replace(/„|”|"/g, '')
+    .trim();
+}
+
+/** Krótki, spokojny jednowierszowy komunikat o zniżkach PIT kierujący do profilu. */
+export function TaxpayerBanner({
+  onOpenProfile,
+}: {
+  declaration?: TaxpayerDeclaration | null;
+  onOpenForm?: () => void;
+  onOpenProfile?: () => void;
+}) {
+  const { taxVerified } = useAppData();
+  const { openAuth } = useAuth();
+
+  const handlePress = () => {
+    if (onOpenProfile) onOpenProfile();
+    else openAuth('account');
+  };
+
   return (
-    <View style={styles.benefitsContainer}>
-      <View style={styles.benefitsHeader}>
-        <View style={styles.cardIcon}>
-          <Ionicons name="id-card-outline" size={20} color={colors.river} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.benefitsTitle}>Benefity dla mieszkańców Torunia</Text>
-          <Text style={styles.benefitsSub}>
-            Toruńska Karta Miejska — zniżki na komunikację, kulturę, sport i parkowanie
-          </Text>
-        </View>
-      </View>
+    <Pressable
+      onPress={handlePress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.pitNote, pressed && { opacity: 0.75 }]}
+    >
+      <Ionicons
+        name={taxVerified ? 'checkmark-circle' : 'information-circle-outline'}
+        size={15}
+        color={taxVerified ? colors.success : colors.muted}
+      />
+      <Text style={styles.pitNoteText} numberOfLines={1}>
+        {taxVerified
+          ? 'Zniżki PIT w Toruniu aktywne'
+          : 'Zniżki z PIT w Toruniu — aktywuj w profilu'}
+      </Text>
+      <Ionicons name="chevron-forward" size={13} color={colors.muted} />
+    </Pressable>
+  );
+}
 
-      <View style={styles.benefitsGrid}>
-        {benefits.map((b) => (
-          <View key={b.id} style={styles.benefitItem}>
-            <View style={styles.benefitTop}>
-              <Ionicons name={b.icon as never} size={16} color={colors.river} />
-              <Text style={styles.benefitDiscount}>{b.discount}</Text>
+/**
+ * Pełnoekranowe wiersze pakietów miejskich:
+ * Lwia część kafelka to duże kolorowe pole z ikoną na górze,
+ * a na dole tylko wysokość zniżki, nazwa i krótki opis.
+ */
+export function ResidentBenefitsGrid({
+  benefits,
+  onSelectBenefit,
+}: {
+  benefits: ResidentBenefit[];
+  onSelectBenefit: (b: ResidentBenefit) => void;
+}) {
+  return (
+    <View style={styles.columnList}>
+      {benefits.map((b) => {
+        const discountVal = extractDiscountValue(b.discount);
+        const vis = BENEFIT_VISUAL[b.id] ?? { bg: colors.riverSoft, fg: colors.river };
+        return (
+          <Pressable
+            key={b.id}
+            onPress={() => onSelectBenefit(b)}
+            style={({ pressed }) => [styles.rowCard, pressed && styles.cardPressed]}
+          >
+            <View style={[styles.heroBanner, { backgroundColor: vis.bg }]}>
+              <View style={[styles.decoCircleLarge, { backgroundColor: `${vis.fg}10` }]} />
+              <View style={[styles.decoCircleSmall, { backgroundColor: `${vis.fg}14` }]} />
+              <View style={[styles.heroIconWrap, { backgroundColor: `${vis.fg}18` }]}>
+                <Ionicons name={b.icon as never} size={46} color={vis.fg} />
+              </View>
             </View>
-            <Text style={styles.benefitName}>{b.title}</Text>
-            <Text style={styles.benefitPlace}>{b.place}</Text>
-            <Text style={styles.benefitDesc}>{b.description}</Text>
-          </View>
-        ))}
-      </View>
+
+            <View style={styles.cardBottom}>
+              <View style={styles.cardTextCol}>
+                <Text style={styles.companyName} numberOfLines={1}>
+                  {b.title}
+                </Text>
+                <Text style={styles.shortDesc} numberOfLines={1}>
+                  {b.place}
+                </Text>
+              </View>
+              <Text style={[styles.discountValue, { color: vis.fg }]} numberOfLines={1}>
+                {discountVal}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-export function OfferCard({ offer, onOpen }: { offer: CityOffer; onOpen: () => void }) {
-  const { savedOffers } = useAppData();
-  const kind = KIND_META[offer.kind];
-  const saved = savedOffers.includes(offer.id);
+/**
+ * Pełnowymiarowy kafelek w osobnym rzędzie:
+ * Na górze duże kolorowe pole z ikoną (lwia część kafelka),
+ * na dole wyłącznie: nazwa firmy, krótki opis i wysokość zniżki.
+ */
+export function OfferGridTile({
+  offer,
+  onOpen,
+}: {
+  offer: CityOffer;
+  onOpen: () => void;
+}) {
+  const discountVal = extractDiscountValue(offer.benefitTag);
+  const company = shortCompanyName(offer.business);
+  const bg = offer.logoBg ?? colors.brickSoft;
+  const fg = offer.logoColor ?? colors.brick;
+  const icon = (offer.logoIcon ?? 'pricetag-outline') as React.ComponentProps<typeof Ionicons>['name'];
 
   return (
-    <Card onPress={onOpen} accessibilityLabel={`${offer.business}: ${offer.title}`}>
-      <View style={styles.topRow}>
-        <View style={styles.badges}>
-          {offer.tkm ? (
-            <Badge
-              label={offer.benefitTag ?? 'Karta Mieszkańca'}
-              color={colors.river}
-              bg={colors.riverSoft}
-              icon="id-card-outline"
-            />
-          ) : null}
-          {offer.kind === 'sponsored' ? (
-            <Badge label="Sponsorowane" color={kind.color} bg={kind.bg} />
-          ) : (
-            <Badge label={OFFER_CATEGORY_LABEL[offer.category]} color={colors.inkSoft} bg="#F3F4F6" />
-          )}
-          {saved ? <Badge label="Zapisano" color={colors.brick} bg={colors.brickSoft} /> : null}
+    <Pressable
+      onPress={onOpen}
+      accessibilityRole="button"
+      accessibilityLabel={`${discountVal}, ${company}, ${offer.title}`}
+      style={({ pressed }) => [styles.rowCard, pressed && styles.cardPressed]}
+    >
+      <View style={[styles.heroBanner, { backgroundColor: bg }]}>
+        <View style={[styles.decoCircleLarge, { backgroundColor: `${fg}10` }]} />
+        <View style={[styles.decoCircleSmall, { backgroundColor: `${fg}14` }]} />
+        <View style={[styles.heroIconWrap, { backgroundColor: `${fg}18` }]}>
+          <Ionicons name={icon} size={48} color={fg} />
         </View>
       </View>
 
-      <Text style={styles.business}>{offer.business}</Text>
-      <Text style={styles.title}>{offer.title}</Text>
-
-      <Text style={styles.metaText} numberOfLines={1}>
-        {offer.location}
-        {offer.expiresAt ? ` · do ${formatLongDate(offer.expiresAt)}` : ''}
-      </Text>
-    </Card>
+      <View style={styles.cardBottom}>
+        <View style={styles.cardTextCol}>
+          <Text style={styles.companyName} numberOfLines={1}>
+            {company}
+          </Text>
+          <Text style={styles.shortDesc} numberOfLines={1}>
+            {offer.title}
+          </Text>
+        </View>
+        <Text style={[styles.discountValue, { color: fg }]} numberOfLines={1}>
+          {discountVal}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
-export function OfferDetailSheet({ offer, onClose }: { offer: CityOffer | null; onClose: () => void }) {
-  const { savedOffers, toggleSavedOffer } = useAppData();
+/** Popup ze szczegółami pakietu miejskiego (lokalizacja + szczegóły). */
+export function BenefitDetailSheet({
+  benefit,
+  onClose,
+}: {
+  benefit: ResidentBenefit | null;
+  onClose: () => void;
+  taxVerified?: boolean;
+  onOpenTaxForm?: () => void;
+}) {
+  const { taxVerified } = useAppData();
+  const { openAuth } = useAuth();
+
+  if (!benefit) return null;
+
+  return (
+    <Sheet
+      visible
+      onClose={onClose}
+      title={benefit.title}
+      footer={
+        taxVerified ? (
+          <Button label="Zamknij" variant="secondary" onPress={onClose} />
+        ) : (
+          <Button
+            label="Aktywuj PIT w profilu"
+            icon="person-outline"
+            onPress={() => {
+              onClose();
+              setTimeout(() => openAuth('account'), 220);
+            }}
+          />
+        )
+      }
+    >
+      <Text style={[styles.popupDiscount, { color: colors.river }]}>{benefit.discount}</Text>
+
+      <View style={styles.locationBox}>
+        <Ionicons name="location-outline" size={18} color={colors.river} />
+        <Text style={styles.locationBoxText}>{benefit.place}</Text>
+      </View>
+
+      <Text style={styles.popupBody}>{benefit.description}</Text>
+    </Sheet>
+  );
+}
+
+/** Popup ze szczegółami oferty (lokalizacja, godziny, opis i kod rabatowy). */
+export function OfferDetailSheet({
+  offer,
+  onClose,
+}: {
+  offer: CityOffer | null;
+  onClose: () => void;
+  taxVerified?: boolean;
+  onOpenTaxForm?: () => void;
+}) {
+  const { savedOffers, toggleSavedOffer, taxVerified } = useAppData();
+  const { openAuth } = useAuth();
   const { showToast } = useToast();
   const [revealed, setRevealed] = useState<string | null>(null);
 
   if (!offer) return null;
-  const kind = KIND_META[offer.kind];
   const saved = savedOffers.includes(offer.id);
   const showCode = revealed === offer.id;
+  const discountVal = offer.benefitTag ?? extractDiscountValue(offer.benefitTag);
 
   return (
     <Sheet
@@ -95,7 +266,7 @@ export function OfferDetailSheet({ offer, onClose }: { offer: CityOffer | null; 
         setRevealed(null);
         onClose();
       }}
-      title={offer.title}
+      title={shortCompanyName(offer.business)}
       footer={
         <View style={{ flexDirection: 'row', gap: spacing.sm }}>
           <Button
@@ -104,118 +275,198 @@ export function OfferDetailSheet({ offer, onClose }: { offer: CityOffer | null; 
             variant="secondary"
             onPress={() => {
               const now = toggleSavedOffer(offer.id);
-              showToast(now ? 'Zapisano ofertę' : 'Usunięto z zapisanych', now ? 'success' : 'info');
+              showToast(now ? 'Zapisano' : 'Usunięto z zapisanych', now ? 'success' : 'info');
             }}
             style={{ flex: 1 }}
           />
           {offer.code && !showCode ? (
-            <Button
-              label="Pokaż kod zniżkowy"
-              icon="pricetag-outline"
-              onPress={() => setRevealed(offer.id)}
-              style={{ flex: 2 }}
-            />
+            offer.tkm && !taxVerified ? (
+              <Button
+                label="Aktywuj PIT w profilu"
+                icon="person-outline"
+                onPress={() => {
+                  onClose();
+                  setTimeout(() => openAuth('account'), 220);
+                }}
+                style={{ flex: 2 }}
+              />
+            ) : (
+              <Button
+                label="Pokaż kod"
+                icon="pricetag-outline"
+                onPress={() => setRevealed(offer.id)}
+                style={{ flex: 2 }}
+              />
+            )
           ) : null}
         </View>
       }
     >
-      <View style={styles.badges}>
-        <Badge label={kind.label} color={kind.color} bg={kind.bg} />
-        {offer.tkm ? (
-          <Badge
-            label={offer.benefitTag ?? 'Karta Mieszkańca'}
-            color={colors.river}
-            bg={colors.riverSoft}
-            icon="id-card-outline"
-          />
-        ) : null}
-      </View>
+      <Text style={styles.popupDiscount}>{discountVal}</Text>
+      <Text style={styles.popupSubtitle}>{offer.title}</Text>
 
-      <Text style={[styles.business, { marginTop: spacing.sm }]}>{offer.business}</Text>
-      <Text style={styles.body}>{offer.description}</Text>
+      <View style={styles.locationBox}>
+        <Ionicons name="location-outline" size={18} color={colors.brick} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.locationBoxText}>{offer.address}</Text>
+          {offer.hours ? <Text style={styles.hoursText}>{offer.hours}</Text> : null}
+        </View>
+      </View>
 
       {showCode && offer.code ? (
         <View style={styles.codeBox}>
-          <Text style={styles.codeLabel}>Kod rabatowy</Text>
+          <Text style={styles.codeLabel}>KOD W LOKALU</Text>
           <Text style={styles.code}>{offer.code}</Text>
         </View>
       ) : null}
 
-      <View style={styles.info}>
-        <MetaRow icon="location-outline" text={offer.address} />
-        {offer.hours ? <MetaRow icon="time-outline" text={offer.hours} /> : null}
-        <MetaRow
-          icon="calendar-outline"
-          text={offer.expiresAt ? `Ważne do ${formatLongDate(offer.expiresAt)}` : 'Oferta stała'}
-        />
-        <MetaRow icon="information-circle-outline" text={offer.conditions} />
-      </View>
+      <Text style={styles.popupBody}>{offer.description}</Text>
+
+      <Text style={styles.conditionsNote}>
+        {offer.conditions}
+        {offer.expiresAt ? ` · ważne do ${formatLongDate(offer.expiresAt)}` : ''}
+      </Text>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  benefitsContainer: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.line,
-    marginBottom: spacing.md,
-  },
-  benefitsHeader: {
+  pitNote: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.md,
+    gap: 6,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
   },
-  cardIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: radius.md,
-    backgroundColor: colors.riverSoft,
+  pitNoteText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.inkSoft,
+  },
+
+  columnList: {
+    gap: spacing.md,
+  },
+  rowCard: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.line,
+    overflow: 'hidden',
+    ...shadow.card,
+  },
+  cardPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.99 }],
+  },
+  heroBanner: {
+    height: 164,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  decoCircleLarge: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    right: -40,
+    top: -60,
+  },
+  decoCircleSmall: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    left: -30,
+    bottom: -40,
+  },
+  heroIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  benefitsTitle: { ...font.h3, color: colors.ink },
-  benefitsSub: { ...font.small, color: colors.muted, marginTop: 1 },
-  benefitsGrid: { gap: spacing.sm },
-  benefitItem: {
-    backgroundColor: colors.cream,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  benefitTop: {
+  cardBottom: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 3,
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
-  benefitDiscount: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.river,
-    backgroundColor: colors.riverSoft,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: radius.pill,
+  cardTextCol: {
+    flex: 1,
+    gap: 2,
   },
-  benefitName: { ...font.bodyBold, color: colors.ink },
-  benefitPlace: { ...font.small, color: colors.inkSoft, marginTop: 1 },
-  benefitDesc: { ...font.small, color: colors.muted, marginTop: 3 },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  business: { ...font.small, color: colors.muted, fontWeight: '600' },
-  title: { ...font.h3, color: colors.ink, marginTop: 2 },
-  metaText: { ...font.small, color: colors.inkSoft, marginTop: 6 },
-  body: { ...font.body, color: colors.inkSoft, marginTop: 6, marginBottom: spacing.md },
-  info: {
-    gap: 6,
+  companyName: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: colors.ink,
+    letterSpacing: -0.3,
+  },
+  shortDesc: {
+    fontSize: 13,
+    color: colors.muted,
+    fontWeight: '400',
+  },
+  discountValue: {
+    fontSize: 30,
+    fontWeight: '900',
+    letterSpacing: -1,
+    color: colors.brick,
+  },
+
+  /* Popup ze szczegółami */
+  popupDiscount: {
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -1,
+    color: colors.brick,
+  },
+  popupSubtitle: {
+    ...font.bodyBold,
+    color: colors.ink,
+    marginTop: 2,
+    marginBottom: spacing.md,
+  },
+  locationBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     backgroundColor: colors.cream,
     borderRadius: radius.md,
     padding: spacing.md,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  locationBoxText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  hoursText: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 2,
+  },
+  popupBody: {
+    ...font.body,
+    color: colors.inkSoft,
+    marginBottom: spacing.sm,
+  },
+  conditionsNote: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
   },
   codeBox: {
     alignItems: 'center',
@@ -224,6 +475,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.brickSoft,
     marginBottom: spacing.md,
   },
-  codeLabel: { ...font.small, color: colors.brickDark },
-  code: { fontSize: 20, fontWeight: '700', letterSpacing: 2, color: colors.brickDark, marginTop: 2 },
+  codeLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    color: colors.brickDark,
+  },
+  code: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 3,
+    color: colors.brickDark,
+    marginTop: 2,
+  },
 });

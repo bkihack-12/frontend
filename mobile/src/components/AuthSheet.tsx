@@ -6,48 +6,121 @@ import { DEMO_ACCOUNT, useAuth } from '../state/AuthContext';
 import { useToast } from '../state/ToastContext';
 import { useAppData } from '../state/AppDataContext';
 import { colors, font, radius, spacing } from '../theme';
-import { formatDateTime } from '../lib/format';
+import { formatAgo, formatDateTime } from '../lib/format';
+import type { NotificationPrefs } from '../types';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+const PREF_LABELS: {
+  key: keyof NotificationPrefs;
+  label: string;
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+}[] = [
+  { key: 'authorityReplies', label: 'Odpowiedzi Urzędu Miasta', icon: 'megaphone-outline' },
+  { key: 'transitAlerts', label: 'Alerty MZK i ruch drogowy', icon: 'bus-outline' },
+  { key: 'partnerDiscounts', label: 'Nowe zniżki w mieście', icon: 'pricetag-outline' },
+  { key: 'eventReminders', label: 'Przypomnienia o wydarzeniach', icon: 'calendar-outline' },
+];
 
 export function AuthSheet() {
   const { sheet, closeAuth, openAuth, user } = useAuth();
   const visible = !!sheet;
-  const mode = user ? 'account' : sheet?.mode === 'account' ? 'login' : sheet?.mode ?? 'login';
+  const mode = user ? 'account' : sheet?.mode ?? 'login';
 
-  const title =
-    mode === 'account' ? 'Twoje konto' : mode === 'register' ? 'Załóż konto' : 'Zaloguj się';
+  const title = user
+    ? 'Profil mieszkańca'
+    : mode === 'account'
+      ? 'Profil i powiadomienia'
+      : mode === 'register'
+        ? 'Załóż konto'
+        : 'Logowanie';
 
   return (
     <Sheet visible={visible} onClose={closeAuth} title={title}>
-      {mode === 'account' ? (
+      {user ? (
         <AccountView />
       ) : (
         <View>
+          <PitProfileCard />
+
           {sheet?.reason ? (
             <View style={{ marginBottom: spacing.md }}>
               <InlineNotice kind="info" text={sheet.reason} />
             </View>
           ) : null}
+
           <View style={styles.tabs} accessibilityRole="tablist">
-            {(['login', 'register'] as const).map((m) => (
+            {(
+              [
+                { k: 'login', label: 'Logowanie' },
+                { k: 'register', label: 'Rejestracja' },
+                { k: 'account', label: 'Powiadomienia' },
+              ] as const
+            ).map((m) => (
               <Pressable
-                key={m}
-                onPress={() => openAuth(m, sheet?.reason)}
+                key={m.k}
+                onPress={() => openAuth(m.k, sheet?.reason)}
                 accessibilityRole="tab"
-                accessibilityState={{ selected: mode === m }}
-                style={[styles.tab, mode === m && styles.tabActive]}
+                accessibilityState={{ selected: mode === m.k }}
+                style={[styles.tab, mode === m.k && styles.tabActive]}
               >
-                <Text style={[styles.tabText, mode === m && { color: colors.ink, fontWeight: '600' }]}>
-                  {m === 'login' ? 'Logowanie' : 'Rejestracja'}
+                <Text style={[styles.tabText, mode === m.k && { color: colors.ink, fontWeight: '600' }]}>
+                  {m.label}
                 </Text>
               </Pressable>
             ))}
           </View>
-          {mode === 'login' ? <LoginForm /> : <RegisterForm />}
+          {mode === 'login' ? (
+            <LoginForm />
+          ) : mode === 'register' ? (
+            <RegisterForm />
+          ) : (
+            <NotificationsPanel />
+          )}
         </View>
       )}
     </Sheet>
+  );
+}
+
+/** Przełącznik rozliczania podatków PIT w Toruniu bezpośrednio w profilu. */
+function PitProfileCard() {
+  const { taxVerified, setTaxVerified } = useAppData();
+  const { showToast } = useToast();
+
+  const toggle = () => {
+    const next = !taxVerified;
+    setTaxVerified(next);
+    showToast(
+      next ? 'Potwierdzono rozliczanie PIT w Toruniu' : 'Wyłączono status podatnika PIT',
+      next ? 'success' : 'info',
+    );
+  };
+
+  return (
+    <Pressable
+      onPress={toggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: taxVerified }}
+      style={[styles.pitCard, taxVerified && styles.pitCardActive]}
+    >
+      <Ionicons
+        name={taxVerified ? 'shield-checkmark' : 'id-card-outline'}
+        size={20}
+        color={taxVerified ? colors.success : colors.brick}
+      />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pitCardTitle}>Rozliczam PIT w Toruniu</Text>
+        <Text style={styles.pitCardSub}>
+          {taxVerified ? 'Zniżki miejskie i kody są odblokowane' : 'Kliknij, aby aktywować zniżki miejskie'}
+        </Text>
+      </View>
+      <Ionicons
+        name={taxVerified ? 'checkbox' : 'square-outline'}
+        size={22}
+        color={taxVerified ? colors.success : colors.muted}
+      />
+    </Pressable>
   );
 }
 
@@ -73,7 +146,7 @@ function LoginForm() {
     setBusy(false);
     if (res.ok) {
       closeAuth();
-      showToast('Zalogowano');
+      showToast('Zalogowano pomyślnie');
     } else {
       setFormError(res.error);
     }
@@ -83,7 +156,6 @@ function LoginForm() {
     setBusy(true);
     await loginDemo();
     setBusy(false);
-    closeAuth();
     showToast(`Zalogowano jako ${DEMO_ACCOUNT.name}`);
   };
 
@@ -97,7 +169,7 @@ function LoginForm() {
         keyboardType="email-address"
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder="anna@example.pl"
+        placeholder="anna@mojtorun.pl"
         error={errors.email}
       />
       <TextField
@@ -114,7 +186,8 @@ function LoginForm() {
       {formError ? <InlineNotice kind="error" text={formError} /> : null}
       <Button label="Zaloguj się" onPress={submit} loading={busy} style={{ marginTop: spacing.sm }} />
       <Button
-        label="Szybkie konto demo"
+        label="Konto demo"
+        icon="flash-outline"
         variant="secondary"
         onPress={demo}
         disabled={busy}
@@ -125,7 +198,7 @@ function LoginForm() {
 }
 
 function RegisterForm() {
-  const { register, closeAuth } = useAuth();
+  const { register } = useAuth();
   const { showToast } = useToast();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -137,7 +210,7 @@ function RegisterForm() {
 
   const submit = async () => {
     const e: Record<string, string> = {};
-    if (name.trim().length < 2) e.name = 'Podaj imię.';
+    if (name.trim().length < 2) e.name = 'Podaj imię i nazwisko.';
     if (!email.trim() || !EMAIL_RE.test(email.trim())) e.email = 'Podaj poprawny e-mail.';
     if (password.length < 6) e.password = 'Min. 6 znaków.';
     if (confirm !== password) e.confirm = 'Hasła różnią się.';
@@ -148,7 +221,6 @@ function RegisterForm() {
     const res = await register({ name, email, password });
     setBusy(false);
     if (res.ok) {
-      closeAuth();
       showToast(`Witaj, ${name.trim().split(' ')[0]}!`);
     } else {
       setFormError(res.error);
@@ -158,11 +230,11 @@ function RegisterForm() {
   return (
     <View>
       <TextField
-        label="Imię"
+        label="Imię i nazwisko"
         icon="person-outline"
         value={name}
         onChangeText={setName}
-        placeholder="Anna"
+        placeholder="Anna Kowalska"
         error={errors.name}
       />
       <TextField
@@ -203,16 +275,101 @@ function RegisterForm() {
   );
 }
 
+function NotificationsPanel() {
+  const {
+    notifications,
+    unreadNotificationCount,
+    markNotificationRead,
+    markAllNotificationsRead,
+    notificationPrefs,
+    toggleNotificationPref,
+  } = useAppData();
+
+  const kindMeta = {
+    city: { icon: 'megaphone-outline' as const, color: colors.brick, bg: colors.brickSoft },
+    transit: { icon: 'bus-outline' as const, color: colors.river, bg: colors.riverSoft },
+    event: { icon: 'calendar-outline' as const, color: colors.success, bg: colors.successSoft },
+    offer: { icon: 'pricetag-outline' as const, color: colors.warning, bg: colors.warningSoft },
+  };
+
+  return (
+    <View>
+      <View style={styles.notifHeaderRow}>
+        <Text style={font.h3}>Powiadomienia</Text>
+        {unreadNotificationCount > 0 ? (
+          <Pressable onPress={markAllNotificationsRead}>
+            <Text style={styles.markReadLink}>Przeczytane ({unreadNotificationCount})</Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      <View style={{ gap: 8, marginBottom: spacing.lg }}>
+        {notifications.map((n) => {
+          const km = kindMeta[n.kind];
+          return (
+            <Pressable
+              key={n.id}
+              onPress={() => markNotificationRead(n.id)}
+              style={[styles.notifCard, !n.read && styles.notifCardUnread]}
+            >
+              <View style={[styles.notifIconWrap, { backgroundColor: km.bg }]}>
+                <Ionicons name={km.icon} size={16} color={km.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={styles.notifTitleRow}>
+                  <Text style={[styles.notifTitle, !n.read && { fontWeight: '700' }]} numberOfLines={1}>
+                    {n.title}
+                  </Text>
+                  {!n.read ? <View style={styles.unreadDot} /> : null}
+                </View>
+                <Text style={styles.notifBody} numberOfLines={2}>
+                  {n.body}
+                </Text>
+                <Text style={styles.notifTime}>{formatAgo(n.createdAt)}</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={[font.h3, { marginBottom: spacing.sm }]}>Ustawienia alertów</Text>
+      <View style={{ gap: 6 }}>
+        {PREF_LABELS.map((pref) => {
+          const enabled = notificationPrefs[pref.key];
+          return (
+            <Pressable
+              key={pref.key}
+              onPress={() => toggleNotificationPref(pref.key)}
+              style={styles.prefRow}
+            >
+              <Ionicons name={pref.icon} size={17} color={enabled ? colors.river : colors.muted} />
+              <Text style={styles.prefTitle}>{pref.label}</Text>
+              <Ionicons
+                name={enabled ? 'checkbox' : 'square-outline'}
+                size={20}
+                color={enabled ? colors.brick : colors.muted}
+              />
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 function AccountView() {
   const { user, logout, closeAuth } = useAuth();
-  const { myBookings, events, savedOffers, isInterested } = useAppData();
+  const { myBookings, events, savedOffers, isInterested, civicMessages, unreadNotificationCount } = useAppData();
   const { showToast } = useToast();
+  const [subTab, setSubTab] = useState<'notifications' | 'profile'>('profile');
+
   if (!user) return null;
 
   const interestedCount = events.filter((e) => isInterested(e.id)).length;
   const booked = myBookings
     .map((b) => ({ b, e: events.find((x) => x.id === b.eventId) }))
     .filter((x) => !!x.e);
+  const myCivic = civicMessages.filter((m) => m.isMine);
 
   return (
     <View>
@@ -233,33 +390,61 @@ function AccountView() {
         </View>
       </View>
 
-      <View style={styles.stats}>
-        <Stat n={booked.length} label="Rezerwacje" />
-        <Stat n={interestedCount} label="Zainteresowania" />
-        <Stat n={savedOffers.length} label="Zapisane" />
+      <PitProfileCard />
+
+      <View style={styles.tabs}>
+        <Pressable
+          onPress={() => setSubTab('profile')}
+          style={[styles.tab, subTab === 'profile' && styles.tabActive]}
+        >
+          <Text style={[styles.tabText, subTab === 'profile' && { color: colors.ink, fontWeight: '600' }]}>
+            Aktywność
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setSubTab('notifications')}
+          style={[styles.tab, subTab === 'notifications' && styles.tabActive]}
+        >
+          <Text style={[styles.tabText, subTab === 'notifications' && { color: colors.ink, fontWeight: '600' }]}>
+            Powiadomienia {unreadNotificationCount > 0 ? `(${unreadNotificationCount})` : ''}
+          </Text>
+        </Pressable>
       </View>
 
-      {booked.length > 0 ? (
-        <>
-          <Text style={[font.h3, { marginTop: spacing.lg, marginBottom: spacing.sm }]}>Moje rezerwacje</Text>
-          {booked.map(({ b, e }) => (
-            <View key={b.eventId} style={styles.booking}>
-              <Ionicons name="ticket-outline" size={18} color={colors.brick} />
-              <View style={{ flex: 1 }}>
-                <Text style={font.bodyBold} numberOfLines={1}>
-                  {e!.title}
-                </Text>
-                <Text style={font.small}>
-                  {formatDateTime(e!.startsAt)} · kod {b.code}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </>
-      ) : null}
+      {subTab === 'notifications' ? (
+        <NotificationsPanel />
+      ) : (
+        <View>
+          <View style={styles.stats}>
+            <Stat n={booked.length} label="Bilety" />
+            <Stat n={interestedCount} label="Wydarzenia" />
+            <Stat n={savedOffers.length} label="Zniżki" />
+            <Stat n={myCivic.length} label="Pisma" />
+          </View>
+
+          {booked.length > 0 ? (
+            <>
+              <Text style={[font.h3, { marginTop: spacing.md, marginBottom: spacing.xs }]}>Rezerwacje</Text>
+              {booked.map(({ b, e }) => (
+                <View key={b.eventId} style={styles.booking}>
+                  <Ionicons name="ticket-outline" size={17} color={colors.brick} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={font.bodyBold} numberOfLines={1}>
+                      {e!.title}
+                    </Text>
+                    <Text style={font.small}>
+                      {formatDateTime(e!.startsAt)} · {b.code}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          ) : null}
+        </View>
+      )}
 
       <Button
-        label="Wyloguj się"
+        label="Wyloguj"
         variant="danger"
         style={{ marginTop: spacing.lg }}
         onPress={async () => {
@@ -282,6 +467,31 @@ function Stat({ n, label }: { n: number; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  pitCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginBottom: spacing.md,
+  },
+  pitCardActive: {
+    backgroundColor: colors.successSoft,
+    borderColor: '#BFE3CD',
+  },
+  pitCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  pitCardSub: {
+    fontSize: 12,
+    color: colors.inkSoft,
+    marginTop: 1,
+  },
   tabs: {
     flexDirection: 'row',
     backgroundColor: colors.cream,
@@ -294,16 +504,16 @@ const styles = StyleSheet.create({
   tabText: { fontWeight: '500', color: colors.muted, fontSize: 13 },
   profile: { flexDirection: 'row', gap: spacing.md, alignItems: 'center', marginBottom: spacing.md },
   bigAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.brickSoft,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bigAvatarText: { color: colors.brickDark, fontSize: 16, fontWeight: '700' },
+  bigAvatarText: { color: colors.brickDark, fontSize: 15, fontWeight: '700' },
   email: { ...font.small, color: colors.muted },
-  stats: { flexDirection: 'row', gap: spacing.sm },
+  stats: { flexDirection: 'row', gap: spacing.xs },
   stat: {
     flex: 1,
     backgroundColor: colors.cream,
@@ -311,8 +521,8 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     alignItems: 'center',
   },
-  statN: { fontSize: 18, fontWeight: '700', color: colors.ink },
-  statL: { ...font.small, color: colors.muted },
+  statN: { fontSize: 17, fontWeight: '700', color: colors.ink },
+  statL: { fontSize: 11, color: colors.muted, textAlign: 'center', marginTop: 2 },
   booking: {
     flexDirection: 'row',
     gap: spacing.sm,
@@ -321,5 +531,83 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginBottom: 6,
     alignItems: 'center',
+  },
+  notifHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  markReadLink: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.brick,
+  },
+  notifCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  notifCardUnread: {
+    backgroundColor: '#FFFDFD',
+    borderColor: '#E5BFB8',
+  },
+  notifIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  notifTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+  },
+  notifTitle: {
+    ...font.small,
+    color: colors.ink,
+    fontWeight: '600',
+    flex: 1,
+  },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: colors.brick,
+  },
+  notifBody: {
+    ...font.small,
+    color: colors.inkSoft,
+    marginTop: 2,
+  },
+  notifTime: {
+    ...font.tiny,
+    color: colors.muted,
+    marginTop: 3,
+  },
+  prefRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  prefTitle: {
+    ...font.small,
+    fontWeight: '600',
+    color: colors.ink,
+    flex: 1,
   },
 });

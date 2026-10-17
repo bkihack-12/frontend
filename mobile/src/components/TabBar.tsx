@@ -7,14 +7,15 @@ import { colors, radius } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-export const TAB_ORDER = ['ruch', 'spolecznosc', 'miasto', 'transport'] as const;
+export const TAB_ORDER = ['ruch', 'spolecznosc', 'miasto', 'transport', 'glos'] as const;
 export type TabKey = (typeof TAB_ORDER)[number];
 
 export const TAB_META: Record<TabKey, { label: string; icon: IconName; iconActive: IconName; href: `/${TabKey}` }> = {
   ruch: { label: 'Ruch', icon: 'car-outline', iconActive: 'car', href: '/ruch' },
   spolecznosc: { label: 'Społeczność', icon: 'compass-outline', iconActive: 'compass', href: '/spolecznosc' },
-  miasto: { label: 'Miasto', icon: 'sparkles-outline', iconActive: 'sparkles', href: '/miasto' },
+  miasto: { label: 'Korzyści', icon: 'gift-outline', iconActive: 'gift', href: '/miasto' },
   transport: { label: 'Transport', icon: 'bus-outline', iconActive: 'bus', href: '/transport' },
+  glos: { label: 'Głos', icon: 'chatbubbles-outline', iconActive: 'chatbubbles', href: '/glos' },
 };
 
 export function TabBar(_props?: unknown) {
@@ -44,13 +45,15 @@ export function TabBar(_props?: unknown) {
             <View style={[styles.iconWrap, focused && styles.iconWrapActive]}>
               <Ionicons
                 name={focused ? meta.iconActive : meta.icon}
-                size={20}
+                size={21}
                 color={focused ? colors.brick : colors.muted}
               />
             </View>
-            <Text style={[styles.label, focused && styles.labelActive]} numberOfLines={1}>
-              {meta.label}
-            </Text>
+            {focused ? (
+              <Text style={styles.labelActive} numberOfLines={1}>
+                {meta.label}
+              </Text>
+            ) : null}
           </Pressable>
         );
       })}
@@ -66,15 +69,26 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     paddingTop: 6,
   },
-  item: { flex: 1, alignItems: 'center', minHeight: 50, justifyContent: 'center', gap: 2 },
+  item: {
+    flex: 1,
+    alignItems: 'center',
+    minHeight: 50,
+    justifyContent: 'center',
+    gap: 2,
+  },
   iconWrap: {
     width: 44,
-    height: 28,
+    height: 30,
     borderRadius: radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  iconWrapActive: { backgroundColor: colors.brickSoft },
-  label: { fontSize: 11, fontWeight: '500', color: colors.muted },
-  labelActive: { fontSize: 11, fontWeight: '700', color: colors.brick },
+  iconWrapActive: {
+    backgroundColor: colors.brickSoft,
+  },
+  labelActive: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.brick,
+  },
 });

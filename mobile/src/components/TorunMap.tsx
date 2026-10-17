@@ -18,21 +18,71 @@ import {
   View,
 } from 'react-native';
 import Svg, { Circle, Defs, Path, Polyline, RadialGradient, Stop } from 'react-native-svg';
+import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
-import type { CityEvent, MapPoint } from '../types';
+import type { CityEvent, MapPoint, TransitStop } from '../types';
 import { CATEGORY_META } from '../data/events';
 import { DEMO_USER_LOCATION, LatLng, TORUN_CENTER, metersPerPixel, project, unproject } from '../lib/geo';
 import { colors, font, radius, shadow, spacing, TOUCH } from '../theme';
 
 /**
- * Rzeczywiste kafelki OpenStreetMap + wbudowany wektorowy podkład Torunia (Wisła, mosty,
- * główne arterie i dzielnice), dzięki czemu mapa jest zawsze czytelna (również offline).
+ * Podkład wektorowy OpenFreeMap (MapLibre GL JS - styl Liberty) + wbudowany podkład
+ * wektorowy Torunia (Wisła, główne arterie i dzielnice) jako natychmiastowy fallback.
+ * Nie wymaga klucza API i nie podlega blokadom 403 tile.openstreetmap.org.
  */
-const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 const MIN_ZOOM = 11.5;
 const MAX_ZOOM = 18;
 const DEFAULT_ZOOM = 13.7;
-const TILE = 256;
+
+const OPENFREEMAP_HTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #EEF1F5; }
+    .maplibregl-ctrl-attrib, .maplibregl-ctrl { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var pending = { lng: ${TORUN_CENTER.lng}, lat: ${TORUN_CENTER.lat}, zoom: ${DEFAULT_ZOOM - 1} };
+    var map = null;
+    function init() {
+      if (!window.maplibregl) { setTimeout(init, 40); return; }
+      map = new maplibregl.Map({
+        container: 'map',
+        style: '${OPENFREEMAP_STYLE}',
+        center: [pending.lng, pending.lat],
+        zoom: pending.zoom,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0
+      });
+      map.on('load', function() {
+        map.jumpTo({ center: [pending.lng, pending.lat], zoom: pending.zoom });
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage('loaded');
+        }
+      });
+    }
+    window.__setView = function(lng, lat, zoom) {
+      pending = { lng: lng, lat: lat, zoom: zoom };
+      if (map) {
+        map.jumpTo({ center: [lng, lat], zoom: zoom });
+      }
+    };
+    window.addEventListener('resize', function() {
+      if (map) map.resize();
+    });
+    init();
+  </script>
+</body>
+</html>`;
 
 const BOUNDS = { minLat: 52.95, maxLat: 53.08, minLng: 18.48, maxLng: 18.74 };
 
@@ -113,20 +163,24 @@ interface View_ {
   zoom: number;
 }
 
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const clamp = (v: number, a: number, b: number) =>
+  Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : (a + b) / 2;
+
+const DEFAULT_PROJECTED = project(TORUN_CENTER, 0);
 
 function clampView(v: View_): View_ {
   const tl = project({ lat: BOUNDS.maxLat, lng: BOUNDS.minLng }, 0);
   const br = project({ lat: BOUNDS.minLat, lng: BOUNDS.maxLng }, 0);
-  return {
-    zoom: clamp(v.zoom, MIN_ZOOM, MAX_ZOOM),
-    cx: clamp(v.cx, tl.x, br.x),
-    cy: clamp(v.cy, tl.y, br.y),
-  };
+  const zoom = Number.isFinite(v.zoom) ? clamp(v.zoom, MIN_ZOOM, MAX_ZOOM) : DEFAULT_ZOOM;
+  const cx = Number.isFinite(v.cx) ? clamp(v.cx, tl.x, br.x) : DEFAULT_PROJECTED.x;
+  const cy = Number.isFinite(v.cy) ? clamp(v.cy, tl.y, br.y) : DEFAULT_PROJECTED.y;
+  return { zoom, cx, cy };
 }
 
 function viewFor(center: LatLng, zoom: number): View_ {
-  const p = project(center, 0);
+  const safeCenter =
+    Number.isFinite(center?.lat) && Number.isFinite(center?.lng) ? center : TORUN_CENTER;
+  const p = project(safeCenter, 0);
   return clampView({ cx: p.x, cy: p.y, zoom });
 }
 
@@ -139,6 +193,7 @@ interface Props {
   events?: CityEvent[];
   markers?: MapMarkerItem[];
   polylines?: MapPolylineItem[];
+  stops?: TransitStop[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   interestedCount?: (e: CityEvent) => number;
@@ -146,6 +201,8 @@ interface Props {
   onToggleHeat?: () => void;
   bottomInset?: number;
   hideControls?: boolean;
+  pickedPoint?: LatLng | null;
+  onPickPoint?: (point: LatLng) => void;
 }
 
 interface Cluster {
@@ -160,6 +217,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     events = [],
     markers = [],
     polylines = [],
+    stops = [],
     selectedId,
     onSelect,
     interestedCount = (e) => e.interested,
@@ -167,6 +225,8 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     onToggleHeat,
     bottomInset = 12,
     hideControls,
+    pickedPoint,
+    onPickPoint,
   },
   ref,
 ) {
@@ -175,16 +235,150 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const viewRef = useRef(view);
   const sizeRef = useRef(size);
   sizeRef.current = size;
+  const onPickPointRef = useRef(onPickPoint);
+  onPickPointRef.current = onPickPoint;
   const containerRef = useRef<React.ComponentRef<typeof View>>(null);
   const animRef = useRef<number | null>(null);
 
   const [tilesLoaded, setTilesLoaded] = useState(0);
+  const webViewRef = useRef<WebView | null>(null);
+  const webMapContainerRef = useRef<React.ComponentRef<typeof View>>(null);
+  const webMapRef = useRef<{
+    jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+    resize: () => void;
+    remove: () => void;
+  } | null>(null);
 
-  const apply = useCallback((v: View_) => {
-    const c = clampView(v);
-    viewRef.current = c;
-    setView(c);
+  const syncBaseMap = useCallback((c: View_) => {
+    const center = unproject(c.cx, c.cy, 0);
+    const mlZoom = c.zoom - 1;
+    if (Platform.OS === 'web') {
+      webMapRef.current?.jumpTo({ center: [center.lng, center.lat], zoom: mlZoom });
+    } else {
+      webViewRef.current?.injectJavaScript(
+        `window.__setView && window.__setView(${center.lng},${center.lat},${mlZoom});true;`,
+      );
+    }
   }, []);
+
+  const apply = useCallback(
+    (v: View_) => {
+      const c = clampView(v);
+      viewRef.current = c;
+      syncBaseMap(c);
+      setView(c);
+    },
+    [syncBaseMap],
+  );
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const host = webMapContainerRef.current as unknown as HTMLElement | null;
+    if (!host || typeof document === 'undefined') return;
+
+    if (!document.getElementById('maplibre-gl-css')) {
+      const link = document.createElement('link');
+      link.id = 'maplibre-gl-css';
+      link.rel = 'stylesheet';
+      link.href = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css';
+      document.head.appendChild(link);
+    }
+
+    if (!document.getElementById('maplibre-gl-inline-fix')) {
+      const styleEl = document.createElement('style');
+      styleEl.id = 'maplibre-gl-inline-fix';
+      styleEl.textContent = `
+        .maplibregl-map { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
+        .maplibregl-canvas-container, .maplibregl-canvas { width: 100% !important; height: 100% !important; display: block !important; }
+        .maplibregl-ctrl-attrib, .maplibregl-ctrl { display: none !important; }
+      `;
+      document.head.appendChild(styleEl);
+    }
+
+    host.innerHTML = '';
+    const mapDiv = document.createElement('div');
+    mapDiv.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;overflow:hidden;';
+    host.appendChild(mapDiv);
+
+    let cancelled = false;
+    let ro: ResizeObserver | null = null;
+    type MLMap = {
+      jumpTo: (opts: { center: [number, number]; zoom: number }) => void;
+      resize: () => void;
+      remove: () => void;
+      on: (ev: string, cb: () => void) => void;
+    };
+    const mountMap = () => {
+      if (cancelled) return;
+      const ml = (
+        window as unknown as {
+          maplibregl?: { Map: new (opts: Record<string, unknown>) => MLMap };
+        }
+      ).maplibregl;
+      if (!ml) {
+        setTimeout(mountMap, 50);
+        return;
+      }
+      if (mapDiv.clientWidth === 0 || mapDiv.clientHeight === 0) {
+        setTimeout(mountMap, 50);
+        return;
+      }
+      const center = unproject(viewRef.current.cx, viewRef.current.cy, 0);
+      const map = new ml.Map({
+        container: mapDiv,
+        style: OPENFREEMAP_STYLE,
+        center: [center.lng, center.lat],
+        zoom: viewRef.current.zoom - 1,
+        interactive: false,
+        attributionControl: false,
+        fadeDuration: 0,
+      });
+      webMapRef.current = map;
+      map.resize();
+      if (typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(() => {
+          map.resize();
+          syncBaseMap(viewRef.current);
+        });
+        ro.observe(mapDiv);
+      }
+      map.on('load', () => {
+        if (!cancelled) {
+          map.resize();
+          syncBaseMap(viewRef.current);
+          setTilesLoaded((n) => n + 1);
+        }
+      });
+    };
+
+    if (
+      !(window as unknown as { maplibregl?: unknown }).maplibregl &&
+      !document.getElementById('maplibre-gl-js')
+    ) {
+      const script = document.createElement('script');
+      script.id = 'maplibre-gl-js';
+      script.src = 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js';
+      script.async = true;
+      script.onload = mountMap;
+      document.head.appendChild(script);
+    } else {
+      mountMap();
+    }
+
+    return () => {
+      cancelled = true;
+      ro?.disconnect();
+      webMapRef.current?.remove();
+      webMapRef.current = null;
+    };
+  }, [syncBaseMap]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && size.w > 0 && size.h > 0) {
+      webMapRef.current?.resize();
+      syncBaseMap(viewRef.current);
+    }
+  }, [size.w, size.h, syncBaseMap]);
 
   const cancelAnim = useCallback(() => {
     if (animRef.current !== null) {
@@ -231,35 +425,55 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     const z2 = clamp(v.zoom + dZoom, MIN_ZOOM, MAX_ZOOM);
     const s1 = Math.pow(2, v.zoom);
     const s2 = Math.pow(2, z2);
-    const wx = v.cx + fx / s1;
-    const wy = v.cy + fy / s1;
-    return { cx: wx - fx / s2, cy: wy - fy / s2, zoom: z2 };
+    const safeFx = Number.isFinite(fx) ? fx : 0;
+    const safeFy = Number.isFinite(fy) ? fy : 0;
+    const wx = v.cx + safeFx / s1;
+    const wy = v.cy + safeFy / s1;
+    return { cx: wx - safeFx / s2, cy: wy - safeFy / s2, zoom: z2 };
   }, []);
 
-  const gesture = useRef({ touches: 0, midX: 0, midY: 0, dist: 0 });
+  const gesture = useRef({ touches: 0, midX: 0, midY: 0, dist: 0, prevDx: 0, prevDy: 0 });
 
   const readTouches = (e: GestureResponderEvent) => {
-    const t = e.nativeEvent.touches;
+    const ne = e.nativeEvent as unknown as {
+      touches?: { pageX?: number; pageY?: number; clientX?: number; clientY?: number }[];
+      pageX?: number;
+      pageY?: number;
+      clientX?: number;
+      clientY?: number;
+      locationX?: number;
+      locationY?: number;
+    };
+    const t = ne.touches;
+    const getX = (obj?: { pageX?: number; clientX?: number }) =>
+      obj?.pageX ?? obj?.clientX ?? ne.pageX ?? ne.clientX ?? ne.locationX ?? 0;
+    const getY = (obj?: { pageY?: number; clientY?: number }) =>
+      obj?.pageY ?? obj?.clientY ?? ne.pageY ?? ne.clientY ?? ne.locationY ?? 0;
+
     if (!t || t.length === 0) {
-      return { n: 1, mx: e.nativeEvent.pageX, my: e.nativeEvent.pageY, dist: 0 };
+      return { n: 1, mx: getX(), my: getY(), dist: 0 };
     }
     if (t.length >= 2) {
-      const a = t[0];
-      const b = t[1];
+      const ax = getX(t[0]);
+      const ay = getY(t[0]);
+      const bx = getX(t[1]);
+      const by = getY(t[1]);
       return {
         n: 2,
-        mx: (a.pageX + b.pageX) / 2,
-        my: (a.pageY + b.pageY) / 2,
-        dist: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY),
+        mx: (ax + bx) / 2,
+        my: (ay + by) / 2,
+        dist: Math.hypot(ax - bx, ay - by),
       };
     }
-    return { n: 1, mx: t[0].pageX, my: t[0].pageY, dist: 0 };
+    return { n: 1, mx: getX(t[0]), my: getY(t[0]), dist: 0 };
   };
 
   const containerOffset = useRef({ x: 0, y: 0 });
   const measure = useCallback(() => {
     containerRef.current?.measureInWindow?.((x: number, y: number) => {
-      containerOffset.current = { x, y };
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        containerOffset.current = { x, y };
+      }
     });
   }, []);
 
@@ -271,16 +485,30 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         onMoveShouldSetPanResponderCapture: (_e, gs) =>
           Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
         onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: (e) => {
+        onPanResponderGrant: (e, gs) => {
           cancelAnim();
           const r = readTouches(e);
-          gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+          gesture.current = {
+            touches: r.n,
+            midX: r.mx,
+            midY: r.my,
+            dist: r.dist,
+            prevDx: gs.dx,
+            prevDy: gs.dy,
+          };
         },
-        onPanResponderMove: (e) => {
+        onPanResponderMove: (e, gs) => {
           const r = readTouches(e);
           const g = gesture.current;
           if (r.n !== g.touches) {
-            gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+            gesture.current = {
+              touches: r.n,
+              midX: r.mx,
+              midY: r.my,
+              dist: r.dist,
+              prevDx: gs.dx,
+              prevDy: gs.dy,
+            };
             return;
           }
           let v = viewRef.current;
@@ -289,10 +517,58 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             const fx = r.mx - (containerOffset.current.x + w / 2);
             const fy = r.my - (containerOffset.current.y + h / 2);
             v = { ...v, ...zoomAround(Math.log2(r.dist / g.dist), fx, fy, v) };
+            const s = Math.pow(2, v.zoom);
+            apply({ ...v, cx: v.cx - (r.mx - g.midX) / s, cy: v.cy - (r.my - g.midY) / s });
+          } else {
+            const ddx = gs.dx - g.prevDx;
+            const ddy = gs.dy - g.prevDy;
+            const s = Math.pow(2, v.zoom);
+            apply({ ...v, cx: v.cx - ddx / s, cy: v.cy - ddy / s });
           }
+          gesture.current = {
+            touches: r.n,
+            midX: r.mx,
+            midY: r.my,
+            dist: r.dist,
+            prevDx: gs.dx,
+            prevDy: gs.dy,
+          };
+        },
+        onPanResponderRelease: (e, gs) => {
+          if (!onPickPointRef.current) return;
+          if (Math.hypot(gs.dx, gs.dy) >= 6) return;
+          const ne = e.nativeEvent as unknown as {
+            clientX?: number;
+            clientY?: number;
+            pageX?: number;
+            pageY?: number;
+            locationX?: number;
+            locationY?: number;
+          };
+          let lx = ne.locationX;
+          let ly = ne.locationY;
+          const node = containerRef.current as unknown as {
+            getBoundingClientRect?: () => { left: number; top: number };
+          } | null;
+          if (node?.getBoundingClientRect && (ne.clientX !== undefined || ne.pageX !== undefined)) {
+            const rect = node.getBoundingClientRect();
+            lx = (ne.clientX ?? ne.pageX ?? 0) - rect.left;
+            ly = (ne.clientY ?? ne.pageY ?? 0) - rect.top;
+          } else if (!Number.isFinite(lx) || !Number.isFinite(ly)) {
+            const r = readTouches(e);
+            lx = r.mx - containerOffset.current.x;
+            ly = r.my - containerOffset.current.y;
+          }
+          const { w, h } = sizeRef.current;
+          if (w <= 0 || h <= 0 || lx === undefined || ly === undefined) return;
+          const v = viewRef.current;
           const s = Math.pow(2, v.zoom);
-          apply({ ...v, cx: v.cx - (r.mx - g.midX) / s, cy: v.cy - (r.my - g.midY) / s });
-          gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+          const wx = v.cx + (lx - w / 2) / s;
+          const wy = v.cy + (ly - h / 2) / s;
+          const pt = unproject(wx, wy, 0);
+          if (Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) {
+            onPickPointRef.current(pt);
+          }
         },
       }),
     [apply, cancelAnim, zoomAround],
@@ -317,45 +593,19 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const scale = Math.pow(2, view.zoom);
   const toScreen = useCallback(
     (p: LatLng) => {
+      if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) {
+        return { x: -9999, y: -9999 };
+      }
       const w = project(p, 0);
-      return {
-        x: size.w / 2 + (w.x - view.cx) * scale,
-        y: size.h / 2 + (w.y - view.cy) * scale,
-      };
+      const x = size.w / 2 + (w.x - view.cx) * scale;
+      const y = size.h / 2 + (w.y - view.cy) * scale;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { x: -9999, y: -9999 };
+      }
+      return { x, y };
     },
     [size.w, size.h, view.cx, view.cy, scale],
   );
-
-  const tiles = useMemo(() => {
-    if (!size.w) return [];
-    const tz = Math.min(18, Math.max(0, Math.round(view.zoom)));
-    const k = Math.pow(2, view.zoom - tz);
-    const ts = TILE * k;
-    const ctx = view.cx * Math.pow(2, tz);
-    const cty = view.cy * Math.pow(2, tz);
-    const minX = Math.floor((ctx - size.w / 2 / k) / TILE);
-    const maxX = Math.floor((ctx + size.w / 2 / k) / TILE);
-    const minY = Math.floor((cty - size.h / 2 / k) / TILE);
-    const maxY = Math.floor((cty + size.h / 2 / k) / TILE);
-    const max = Math.pow(2, tz);
-    const out: { key: string; url: string; left: number; top: number; size: number }[] = [];
-    for (let x = minX; x <= maxX; x++) {
-      for (let y = minY; y <= maxY; y++) {
-        if (x < 0 || y < 0 || x >= max || y >= max) continue;
-        const url = TILE_URL.replace('{z}', String(tz))
-          .replace('{x}', String(x))
-          .replace('{y}', String(y));
-        out.push({
-          key: `${tz}/${x}/${y}`,
-          url,
-          left: size.w / 2 + (x * TILE - ctx) * k,
-          top: size.h / 2 + (y * TILE - cty) * k,
-          size: ts,
-        });
-      }
-    }
-    return out;
-  }, [view.cx, view.cy, view.zoom, size.w, size.h]);
 
   /* ----- Event clusters ----- */
   const { clusters, singles } = useMemo(() => {
@@ -387,40 +637,65 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     return { clusters: multi, singles: ones };
   }, [events, toScreen, size.w, size.h, selectedId, interestedCount]);
 
-  /* ----- Heat layer ----- */
+  /* ----- Heat layer: zielony (luźno), żółto-bursztynowy (umiarkowany ruch), czerwony (zatłoczone / za dużo ludzi) ----- */
   const heat = useMemo(() => {
     if (!showHeat || !size.w || events.length === 0) return [];
-    return events.map((ev) => {
-      const n = interestedCount(ev);
-      const pt = toScreen(ev);
-      const meters = 200 + n * 0.95;
-      const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 30, 180);
-      return { id: ev.id, x: pt.x, y: pt.y, r, o: clamp(0.22 + n / 750, 0.24, 0.65) };
-    });
+    return events
+      .map((ev) => {
+        const n = interestedCount(ev);
+        const pt = toScreen(ev);
+        const capRatio =
+          ev.capacity && ev.capacity > 0 ? (ev.taken ?? 0) / ev.capacity : 0;
+        const isCrowded = n >= 260 || capRatio >= 0.92;
+        const isModerate = !isCrowded && (n >= 120 || capRatio >= 0.75);
+        const level: 'calm' | 'moderate' | 'crowded' = isCrowded
+          ? 'crowded'
+          : isModerate
+            ? 'moderate'
+            : 'calm';
+        const meters =
+          level === 'crowded'
+            ? 250 + n * 1.15
+            : level === 'moderate'
+              ? 195 + n * 0.85
+              : 155 + n * 0.7;
+        const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 36, 195);
+        const o = level === 'crowded' ? 0.92 : level === 'moderate' ? 0.82 : 0.76;
+        return { id: ev.id, x: pt.x, y: pt.y, r, o, level };
+      })
+      .filter((h) => Number.isFinite(h.x) && Number.isFinite(h.y) && Number.isFinite(h.r));
   }, [events, showHeat, toScreen, size.w, view.zoom, interestedCount]);
 
   /* ----- Screen-projected polylines (traffic jams / transit routes) ----- */
   const screenPolylines = useMemo(() => {
     if (!size.w || polylines.length === 0) return [];
-    return polylines.map((pl) => {
-      const pts = pl.path.map(toScreen);
-      const pointsAttr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const midIdx = Math.floor(pts.length / 2);
-      const mid =
-        pts.length >= 2 && pts.length % 2 === 0
-          ? {
-              x: (pts[midIdx - 1].x + pts[midIdx].x) / 2,
-              y: (pts[midIdx - 1].y + pts[midIdx].y) / 2,
-            }
-          : pts[midIdx] ?? { x: 0, y: 0 };
-      return {
-        ...pl,
-        pts,
-        pointsAttr,
-        mid,
-        selected: pl.id === selectedId,
-      };
-    });
+    return polylines
+      .map((pl) => {
+        const validPath = (pl.path ?? []).filter(
+          (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng),
+        );
+        const pts = validPath
+          .map(toScreen)
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x > -5000 && p.y > -5000);
+        if (pts.length < 2) return null;
+        const pointsAttr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        const midIdx = Math.floor(pts.length / 2);
+        const mid =
+          pts.length >= 2 && pts.length % 2 === 0
+            ? {
+                x: (pts[midIdx - 1].x + pts[midIdx].x) / 2,
+                y: (pts[midIdx - 1].y + pts[midIdx].y) / 2,
+              }
+            : pts[midIdx] ?? { x: 0, y: 0 };
+        return {
+          ...pl,
+          pts,
+          pointsAttr,
+          mid,
+          selected: pl.id === selectedId,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
   }, [polylines, size.w, toScreen, selectedId]);
 
   /* ----- Vector basemap paths (always rendered beneath / when tiles not loaded) ----- */
@@ -495,42 +770,91 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         </View>
       ) : null}
 
-      {/* Rzeczywisty podkład OpenStreetMap */}
+      {/* Podkład wektorowy OpenFreeMap (MapLibre GL JS) */}
       <View style={StyleSheet.absoluteFill} pointerEvents="none">
-        {tiles.map((t) => (
-          <View
-            key={t.key}
-            style={[styles.tile, { left: t.left, top: t.top, width: t.size + 0.6, height: t.size + 0.6 }]}
-          >
-            <Image
-              source={{ uri: t.url }}
-              style={StyleSheet.absoluteFill}
-              onLoad={() => setTilesLoaded((n) => n + 1)}
-              fadeDuration={0}
-            />
-          </View>
-        ))}
+        {Platform.OS === 'web' ? (
+          <View ref={webMapContainerRef} style={StyleSheet.absoluteFill} />
+        ) : (
+          <WebView
+            ref={webViewRef}
+            source={{ html: OPENFREEMAP_HTML, baseUrl: 'https://tiles.openfreemap.org' }}
+            style={styles.webview}
+            originWhitelist={['*']}
+            javaScriptEnabled
+            domStorageEnabled
+            scrollEnabled={false}
+            bounces={false}
+            overScrollMode="never"
+            androidLayerType="hardware"
+            onLoadEnd={() => syncBaseMap(viewRef.current)}
+            onMessage={() => {
+              syncBaseMap(viewRef.current);
+              setTilesLoaded((n) => n + 1);
+            }}
+          />
+        )}
       </View>
-      <Text style={styles.attribution}>© OpenStreetMap contributors</Text>
+      <Text style={styles.attribution}>© OpenFreeMap · © OpenMapTiles · © OpenStreetMap</Text>
 
       {/* Warstwa aktywności + odcinki ulic / linii komunikacji */}
       {size.w > 0 && (showHeat || screenPolylines.length > 0) ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <Svg width={size.w} height={size.h}>
             <Defs>
-              <RadialGradient id="heat" cx="50%" cy="50%" rx="50%" ry="50%">
-                <Stop offset="0" stopColor="#D96B52" stopOpacity="0.65" />
-                <Stop offset="0.45" stopColor="#E99B58" stopOpacity="0.35" />
-                <Stop offset="1" stopColor="#F4C77B" stopOpacity="0" />
+              {/* Luźno / spokojnie — łagodny zielono-szmaragdowy gradient */}
+              <RadialGradient id="heatCalm" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#10B981" stopOpacity="0.62" />
+                <Stop offset="38%" stopColor="#34D399" stopOpacity="0.44" />
+                <Stop offset="74%" stopColor="#6EE7B7" stopOpacity="0.22" />
+                <Stop offset="100%" stopColor="#A7F3D0" stopOpacity="0" />
+              </RadialGradient>
+              {/* Umiarkowany ruch — ciepły żółto-bursztynowy gradient (bez czerwieni) */}
+              <RadialGradient id="heatModerate" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#F59E0B" stopOpacity="0.68" />
+                <Stop offset="36%" stopColor="#FBBF24" stopOpacity="0.50" />
+                <Stop offset="72%" stopColor="#FDE047" stopOpacity="0.25" />
+                <Stop offset="100%" stopColor="#FEF08A" stopOpacity="0" />
+              </RadialGradient>
+              {/* Zatłoczone / za dużo ludzi — intensywny czerwony gradient ostrzegawczy */}
+              <RadialGradient id="heatCrowded" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#DC2626" stopOpacity="0.88" />
+                <Stop offset="32%" stopColor="#EF4444" stopOpacity="0.72" />
+                <Stop offset="64%" stopColor="#F97316" stopOpacity="0.45" />
+                <Stop offset="86%" stopColor="#FBBF24" stopOpacity="0.20" />
+                <Stop offset="100%" stopColor="#FDE047" stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="heatCrowdedCore" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#991B1B" stopOpacity="0.88" />
+                <Stop offset="55%" stopColor="#DC2626" stopOpacity="0.55" />
+                <Stop offset="100%" stopColor="#EF4444" stopOpacity="0" />
               </RadialGradient>
             </Defs>
             {showHeat
-              ? heat.map((h) => (
-                  <Circle key={h.id} cx={h.x} cy={h.y} r={h.r} fill="url(#heat)" opacity={h.o} />
-                ))
+              ? heat.map((h) => {
+                  const gradId =
+                    h.level === 'crowded'
+                      ? 'url(#heatCrowded)'
+                      : h.level === 'moderate'
+                        ? 'url(#heatModerate)'
+                        : 'url(#heatCalm)';
+                  return (
+                    <React.Fragment key={h.id}>
+                      <Circle cx={h.x} cy={h.y} r={h.r} fill={gradId} opacity={h.o} />
+                      {h.level === 'crowded' ? (
+                        <Circle
+                          cx={h.x}
+                          cy={h.y}
+                          r={h.r * 0.48}
+                          fill="url(#heatCrowdedCore)"
+                          opacity={0.85}
+                        />
+                      ) : null}
+                    </React.Fragment>
+                  );
+                })
               : null}
             {screenPolylines.map((pl) => {
-              const strokeW = pl.faint ? 4 : pl.selected ? 9 : 6;
+              const strokeW = pl.faint ? 4.5 : pl.selected ? 10 : 7.5;
               return (
                 <React.Fragment key={pl.id}>
                   {/* Obrys (casing) dla czytelności */}
@@ -539,10 +863,10 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                       points={pl.pointsAttr}
                       fill="none"
                       stroke="#FFFFFF"
-                      strokeWidth={strokeW + 4}
+                      strokeWidth={strokeW + 5}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.95}
+                      opacity={0.98}
                     />
                   ) : null}
                   <Polyline
@@ -550,29 +874,29 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                     fill="none"
                     stroke={pl.color}
                     strokeWidth={strokeW}
-                    strokeDasharray={pl.dashed ? '8, 6' : undefined}
+                    strokeDasharray={pl.dashed ? '9, 6' : undefined}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    opacity={pl.faint ? 0.42 : 0.95}
+                    opacity={pl.faint ? 0.65 : 0.98}
                   />
-                  {/* Punkty końcowe odcinka */}
+                  {/* Punkty końcowe zweryfikowanego odcinka utrudnienia */}
                   {!pl.faint && pl.pts.length >= 2 ? (
                     <>
                       <Circle
                         cx={pl.pts[0].x}
                         cy={pl.pts[0].y}
-                        r={4.5}
+                        r={5}
                         fill="#FFFFFF"
                         stroke={pl.color}
-                        strokeWidth={2.5}
+                        strokeWidth={2.8}
                       />
                       <Circle
                         cx={pl.pts[pl.pts.length - 1].x}
                         cy={pl.pts[pl.pts.length - 1].y}
-                        r={4.5}
+                        r={5}
                         fill="#FFFFFF"
                         stroke={pl.color}
-                        strokeWidth={2.5}
+                        strokeWidth={2.8}
                       />
                     </>
                   ) : null}
@@ -583,7 +907,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         </View>
       ) : null}
 
-      {/* Etykiety długości zapchanych ulic / odcinków linii na mapie */}
+      {/* Etykiety długości zapchanych ulic / zweryfikowanych odcinków utrudnień na mapie */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {screenPolylines.map((pl) => {
           if (!pl.label || pl.faint) return null;
@@ -594,8 +918,8 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
               style={[
                 styles.segmentLabel,
                 {
-                  left: pl.mid.x - 42,
-                  top: pl.mid.y - 26,
+                  left: pl.mid.x - 48,
+                  top: pl.mid.y - 28,
                   borderColor: pl.color,
                   backgroundColor: pl.selected ? pl.color : '#FFFFFF',
                 },
@@ -621,8 +945,44 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         <View style={styles.userDot} />
       </View>
 
-      {/* Znaczniki wydarzeń (Społeczność) oraz punktów (Ruch / Transport) */}
+      {/* Przystanki komunikacji miejskiej, znaczniki wydarzeń oraz zgłoszeń */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {stops.map((s) => {
+          const pt = toScreen(s);
+          if (pt.x < -60 || pt.y < -60 || pt.x > size.w + 60 || pt.y > size.h + 60) return null;
+          const selected = s.id === selectedId;
+          return (
+            <Pressable
+              key={s.id}
+              onPress={() => onSelect(selected ? null : s.id)}
+              style={[
+                styles.stopHit,
+                { left: pt.x - 14, top: pt.y - 14, zIndex: selected ? 55 : 3 },
+              ]}
+            >
+              {selected ? (
+                <View style={styles.markerLabel}>
+                  <Text style={styles.markerLabelText} numberOfLines={1}>
+                    {s.name} ({s.lines.join(', ')})
+                  </Text>
+                </View>
+              ) : null}
+              <View
+                style={[
+                  styles.stopPin,
+                  selected && {
+                    backgroundColor: colors.river,
+                    borderColor: colors.ink,
+                    transform: [{ scale: 1.22 }],
+                  },
+                ]}
+              >
+                <Ionicons name="bus" size={11} color={selected ? '#FFFFFF' : colors.river} />
+              </View>
+            </Pressable>
+          );
+        })}
+
         {clusters.map((c) => (
           <Pressable
             key={`cl-${c.key}`}
@@ -706,6 +1066,39 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             </Pressable>
           );
         })}
+
+        {pickedPoint
+          ? (() => {
+              const pt = toScreen(pickedPoint);
+              return (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.markerHit,
+                    { left: pt.x - 20, top: pt.y - 22, zIndex: 90 },
+                  ]}
+                >
+                  <View style={[styles.markerLabel, { backgroundColor: colors.brick }]}>
+                    <Text style={styles.markerLabelText} numberOfLines={1}>
+                      Wybrane miejsce
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.pin,
+                      {
+                        backgroundColor: colors.brick,
+                        borderColor: '#FFFFFF',
+                        transform: [{ scale: 1.25 }],
+                      },
+                    ]}
+                  >
+                    <Ionicons name="location" size={17} color="#FFFFFF" />
+                  </View>
+                </View>
+              );
+            })()
+          : null}
       </View>
 
       {/* Przyciski sterowania mapą */}
@@ -761,8 +1154,8 @@ function MapButton({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#EEF1F5', overflow: 'hidden' },
-  tile: {
-    position: 'absolute',
+  webview: {
+    flex: 1,
     backgroundColor: 'transparent',
   },
   attribution: {
@@ -800,11 +1193,29 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
+  stopHit: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopPin: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: colors.river,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.card,
+  },
   markerHit: { position: 'absolute', width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   markerLabel: {
     position: 'absolute',
     top: -26,
-    maxWidth: 180,
+    maxWidth: 200,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,

@@ -1,15 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Button, InlineNotice, MetaRow, Sheet } from './ui';
-import { PlacesBar, actionLabel } from './EventCard';
+import { Badge, Button, InlineNotice, Sheet } from './ui';
+import { PlacesBar, actionLabel, eventDiscountTag } from './EventCard';
 import { CATEGORY_META } from '../data/events';
 import {
   formatDateTime,
   formatDistance,
   formatPrice,
   formatTime,
-  pluralPl,
 } from '../lib/format';
 import type { EventWithDistance } from '../lib/eventFilters';
 import { useAppData } from '../state/AppDataContext';
@@ -24,13 +23,30 @@ interface Props {
   onClose: () => void;
   onShowOnMap?: (e: EventWithDistance) => void;
   onNeedAuth: (mode: 'login' | 'register', event: EventWithDistance) => void;
+  taxVerified?: boolean;
+  onOpenTaxForm?: () => void;
 }
 
-export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Props) {
+export function EventDetailSheet({
+  event,
+  onClose,
+  onShowOnMap,
+  onNeedAuth,
+  taxVerified,
+  onOpenTaxForm,
+}: Props) {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const { placesLeft, getBooking, bookEvent, cancelBooking, interestedCount, isInterested, toggleInterested } =
-    useAppData();
+  const {
+    placesLeft,
+    getBooking,
+    bookEvent,
+    cancelBooking,
+    interestedCount,
+    isInterested,
+    toggleInterested,
+    deleteEvent,
+  } = useAppData();
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState('');
 
@@ -47,6 +63,13 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
   const interested = isInterested(event.id);
   const count = interestedCount(event);
   const isTicket = event.action === 'ticket';
+  const discountLabel = eventDiscountTag(event);
+
+  const handleDelete = () => {
+    deleteEvent(event.id);
+    onClose();
+    showToast('Usunięto wydarzenie', 'info');
+  };
 
   const doBook = async () => {
     if (!user) return;
@@ -70,13 +93,14 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
     showToast('Anulowano rezerwację', 'info');
   };
 
-  let footer: React.ReactNode;
+  let primaryAction: React.ReactNode;
   if (event.type === 'open') {
-    footer = (
+    primaryAction = (
       <Button
         label={interested ? 'Zainteresowany ✓' : 'Interesuje mnie'}
         icon={interested ? 'heart' : 'heart-outline'}
         variant={interested ? 'primary' : 'secondary'}
+        style={{ flex: 1 }}
         onPress={() => {
           const now = toggleInterested(event.id);
           showToast(now ? 'Dodano do zainteresowań' : 'Usunięto z zainteresowań', now ? 'success' : 'info');
@@ -84,9 +108,9 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
       />
     );
   } else if (booking) {
-    footer =
+    primaryAction =
       step === 'cancelConfirm' || step === 'cancelBusy' ? (
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+        <View style={{ flex: 1, flexDirection: 'row', gap: spacing.sm }}>
           <Button
             label="Zostaw"
             variant="secondary"
@@ -106,29 +130,29 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
         <Button
           label={isTicket ? 'Zrezygnuj z biletu' : 'Wypisz się'}
           variant="danger"
+          style={{ flex: 1 }}
           onPress={() => setStep('cancelConfirm')}
         />
       );
   } else if (left === 0) {
-    footer = <Button label="Brak wolnych miejsc" variant="secondary" disabled onPress={() => {}} />;
+    primaryAction = (
+      <Button label="Brak wolnych miejsc" variant="secondary" disabled onPress={() => {}} style={{ flex: 1 }} />
+    );
   } else if (!user) {
-    footer = (
-      <View style={{ gap: spacing.sm }}>
-        <Text style={styles.authPrompt}>Zaloguj się, aby zarezerwować miejsce.</Text>
-        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-          <Button label="Zaloguj się" onPress={() => onNeedAuth('login', event)} style={{ flex: 1 }} />
-          <Button
-            label="Załóż konto"
-            variant="secondary"
-            onPress={() => onNeedAuth('register', event)}
-            style={{ flex: 1 }}
-          />
-        </View>
+    primaryAction = (
+      <View style={{ flex: 1, flexDirection: 'row', gap: spacing.sm }}>
+        <Button label="Zaloguj i zarezerwuj" onPress={() => onNeedAuth('login', event)} style={{ flex: 1 }} />
+        <Button
+          label="Załóż konto"
+          variant="secondary"
+          onPress={() => onNeedAuth('register', event)}
+          style={{ flex: 1 }}
+        />
       </View>
     );
   } else if (step === 'confirm' || step === 'busy') {
-    footer = (
-      <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+    primaryAction = (
+      <View style={{ flex: 1, flexDirection: 'row', gap: spacing.sm }}>
         <Button
           label="Anuluj"
           variant="secondary"
@@ -140,29 +164,81 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
       </View>
     );
   } else {
-    footer = (
+    primaryAction = (
       <Button
         label={actionLabel(event)}
         icon={isTicket ? 'ticket-outline' : 'checkmark-circle-outline'}
+        style={{ flex: 1 }}
         onPress={() => setStep('confirm')}
       />
     );
   }
 
+  const footer = (
+    <View style={styles.footerRow}>
+      {primaryAction}
+      <Pressable
+        onPress={handleDelete}
+        accessibilityRole="button"
+        accessibilityLabel="Usuń wydarzenie"
+        style={({ pressed }) => [styles.deleteBtn, pressed && { opacity: 0.8 }]}
+      >
+        <Ionicons name="trash-outline" size={18} color={colors.danger} />
+        <Text style={styles.deleteBtnText}>Usuń</Text>
+      </Pressable>
+    </View>
+  );
+
   return (
     <Sheet visible onClose={onClose} title={event.title} footer={footer}>
-      <View style={styles.badges}>
-        <Badge label={meta.label} color={meta.color} bg="#F3F4F6" />
-        <Badge
-          label={event.isFree ? 'Bezpłatne' : formatPrice(event.priceZl ?? 0)}
-          color={event.isFree ? colors.success : colors.inkSoft}
-          bg={event.isFree ? colors.successSoft : '#F3F4F6'}
-        />
+      {/* Hero Box: Zniżka + Gdzie i Kiedy */}
+      <View style={[styles.heroCard, event.isFree && styles.heroCardFree]}>
+        <View style={styles.heroTopRow}>
+          <View>
+            <Text style={[styles.heroDiscountBig, event.isFree && { color: colors.success }]}>
+              {discountLabel}
+            </Text>
+            {!event.isFree && event.priceZl ? (
+              <Text style={styles.regularPrice}>Cena regularna: {formatPrice(event.priceZl)}</Text>
+            ) : null}
+          </View>
+          <Badge label={meta.label} color={meta.color} bg={colors.surface} icon={meta.icon as never} />
+        </View>
+
+        <View style={styles.whereWhenCard}>
+          <View style={styles.whereRow}>
+            <Ionicons name="location" size={16} color={colors.brick} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.whereVenue}>{event.venue}</Text>
+              <Text style={styles.whereAddress}>
+                {event.address} · {formatDistance(event.distanceKm)}
+              </Text>
+            </View>
+            {onShowOnMap ? (
+              <Pressable onPress={() => onShowOnMap(event)} style={styles.mapPill}>
+                <Ionicons name="map-outline" size={13} color={colors.brick} />
+                <Text style={styles.mapPillText}>Mapa</Text>
+              </Pressable>
+            ) : null}
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={styles.whenRow}>
+            <Ionicons name="calendar-outline" size={15} color={colors.river} />
+            <Text style={styles.whenText}>
+              {formatDateTime(event.startsAt)}–{formatTime(event.endsAt)}
+            </Text>
+            <View style={{ flex: 1 }} />
+            <Ionicons name="people-outline" size={15} color={colors.muted} />
+            <Text style={styles.peopleCount}>{count}</Text>
+          </View>
+        </View>
       </View>
 
       {booking ? (
         <View style={styles.bookedBanner}>
-          <Ionicons name="checkmark-circle" size={20} color={colors.success} />
+          <Ionicons name="checkmark-circle" size={18} color={colors.success} />
           <Text style={styles.bookedText}>Rezerwacja aktywna · kod: {booking.code}</Text>
         </View>
       ) : null}
@@ -173,15 +249,6 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
         </View>
       ) : null}
 
-      <View style={styles.info}>
-        <MetaRow icon="calendar-outline" text={`${formatDateTime(event.startsAt)}–${formatTime(event.endsAt)}`} />
-        <MetaRow icon="location-outline" text={`${event.venue}, ${event.address} (${formatDistance(event.distanceKm)})`} />
-        <MetaRow
-          icon="people-outline"
-          text={`${count} ${pluralPl(count, 'osoba zainteresowana', 'osoby zainteresowane', 'osób zainteresowanych')}`}
-        />
-      </View>
-
       {left !== undefined && event.capacity ? (
         <View style={styles.places}>
           <PlacesBar left={left} capacity={event.capacity} />
@@ -190,22 +257,106 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
 
       <Text style={styles.desc}>{event.description}</Text>
 
-      {onShowOnMap ? (
-        <Button
-          label="Pokaż na mapie"
-          icon="map-outline"
-          variant="ghost"
-          small
-          onPress={() => onShowOnMap(event)}
-          style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
-        />
+      {!event.isFree && !taxVerified && onOpenTaxForm ? (
+        <Pressable
+          onPress={() => {
+            onClose();
+            setTimeout(onOpenTaxForm, 220);
+          }}
+          style={styles.taxMiniBar}
+        >
+          <Ionicons name="id-card-outline" size={16} color={colors.brick} />
+          <Text style={styles.taxMiniText}>Potwierdź PIT w Toruniu, aby naliczyć ulgę na bilet</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.brick} />
+        </Pressable>
       ) : null}
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.md },
+  heroCard: {
+    backgroundColor: colors.brickSoft,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  heroCardFree: {
+    backgroundColor: colors.successSoft,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  heroDiscountBig: {
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.7,
+    color: colors.brickDark,
+  },
+  regularPrice: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkSoft,
+    marginTop: 2,
+  },
+  whereWhenCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    gap: 8,
+  },
+  whereRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  whereVenue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  whereAddress: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 1,
+  },
+  mapPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.brickSoft,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+  },
+  mapPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.brickDark,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: colors.line,
+  },
+  whenRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  whenText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  peopleCount: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.muted,
+  },
   bookedBanner: {
     flexDirection: 'row',
     gap: 8,
@@ -213,21 +364,53 @@ const styles = StyleSheet.create({
     backgroundColor: colors.successSoft,
     borderRadius: radius.md,
     padding: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
-  bookedText: { ...font.small, color: colors.success, fontWeight: '600' },
-  info: {
-    gap: 6,
-    backgroundColor: colors.cream,
-    borderRadius: radius.md,
-    padding: spacing.md,
-  },
+  bookedText: { ...font.small, color: colors.success, fontWeight: '700' },
   places: {
-    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
     backgroundColor: colors.cream,
     borderRadius: radius.md,
-    padding: spacing.md,
+    padding: spacing.sm,
   },
-  desc: { ...font.body, color: colors.inkSoft, marginTop: spacing.md },
-  authPrompt: { ...font.small, color: colors.inkSoft, textAlign: 'center' },
+  desc: { ...font.body, color: colors.inkSoft },
+  taxMiniBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: spacing.md,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  taxMiniText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.inkSoft,
+    flex: 1,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  deleteBtn: {
+    height: 44,
+    paddingHorizontal: 14,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: '#F3C1BC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  deleteBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.danger,
+  },
 });

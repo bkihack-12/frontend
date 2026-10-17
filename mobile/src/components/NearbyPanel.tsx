@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef } from 'react';
-import { Animated, FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, EmptyState, LoadingState } from './ui';
-import { EventCard } from './EventCard';
-import { formatDateTime, formatDistance, pluralPl } from '../lib/format';
+import { EventCard, eventDiscountTag } from './EventCard';
+import { formatDateTime } from '../lib/format';
 import type { EventWithDistance } from '../lib/eventFilters';
 import { colors, font, radius, shadow, spacing } from '../theme';
 
-export const PEEK_EMPTY = 68;
-export const PEEK_SELECTED = 148;
+export const PEEK_EMPTY = 64;
+export const PEEK_SELECTED = 136;
 
 interface Props {
   events: EventWithDistance[];
@@ -22,6 +22,7 @@ interface Props {
   onOpenEvent: (e: EventWithDistance) => void;
   onShowOnMap: (e: EventWithDistance) => void;
   onClearSelection: () => void;
+  onDeleteEvent?: (e: EventWithDistance) => void;
 }
 
 export function NearbyPanel({
@@ -36,6 +37,7 @@ export function NearbyPanel({
   onOpenEvent,
   onShowOnMap,
   onClearSelection,
+  onDeleteEvent,
 }: Props) {
   const peekH = selected ? PEEK_SELECTED : PEEK_EMPTY;
   const openH = Math.max(PEEK_SELECTED + 40, mapHeight * 0.72);
@@ -70,11 +72,9 @@ export function NearbyPanel({
         <View style={styles.handle} />
         <View style={styles.headRow}>
           <Text style={styles.headTitle}>
-            Wydarzenia w pobliżu ({loading ? '…' : events.length}{' '}
-            {pluralPl(events.length, 'miejsce', 'miejsca', 'miejsc')})
+            Wydarzenia ({loading ? '…' : events.length})
           </Text>
           <View style={{ flex: 1 }} />
-          <Text style={styles.toggleText}>{open ? 'Mapa' : 'Lista'}</Text>
           <Ionicons name={open ? 'chevron-down' : 'chevron-up'} size={18} color={colors.inkSoft} />
         </View>
       </View>
@@ -86,42 +86,61 @@ export function NearbyPanel({
           <EmptyState
             icon="calendar-outline"
             title="Brak wydarzeń"
-            message="Zmień kryteria wyszukiwania lub wyczyść filtry."
+            message="Zmień kryteria lub wyczyść filtry."
             actionLabel={hasFilters ? 'Wyczyść filtry' : undefined}
             onAction={hasFilters ? onClearFilters : undefined}
           />
         ) : (
-          <FlatList
-            data={events}
-            keyExtractor={(e) => e.id}
-            contentContainerStyle={styles.list}
-            ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
-            renderItem={({ item }) => (
-              <EventCard
-                event={item}
-                highlight={item.id === selected?.id}
-                onOpen={() => onOpenEvent(item)}
-                onShowOnMap={() => onShowOnMap(item)}
-              />
-            )}
-          />
+          >
+            <View style={styles.grid}>
+              {events.map((item) => (
+                <EventCard
+                  key={item.id}
+                  event={item}
+                  highlight={item.id === selected?.id}
+                  onOpen={() => onOpenEvent(item)}
+                  onShowOnMap={() => onShowOnMap(item)}
+                  onDelete={onDeleteEvent ? () => onDeleteEvent(item) : undefined}
+                />
+              ))}
+            </View>
+          </ScrollView>
         )
       ) : selected ? (
-        <Pressable onPress={() => onOpenEvent(selected)} style={styles.preview}>
-          <View style={{ flex: 1 }}>
+        <View style={styles.preview}>
+          <Pressable onPress={() => onOpenEvent(selected)} style={{ flex: 1 }}>
             <Text style={styles.previewTitle} numberOfLines={1}>
               {selected.title}
             </Text>
             <Text style={styles.previewMeta} numberOfLines={1}>
-              {formatDateTime(selected.startsAt)} · {selected.venue} · {formatDistance(selected.distanceKm)}
+              {selected.venue} · {formatDateTime(selected.startsAt)}
             </Text>
-          </View>
-          <Button label="Otwórz" small onPress={() => onOpenEvent(selected)} />
-          <Pressable onPress={onClearSelection} hitSlop={8} style={{ padding: 4 }}>
+          </Pressable>
+          <Button label="Więcej" small onPress={() => onOpenEvent(selected)} />
+          {onDeleteEvent ? (
+            <Pressable
+              onPress={() => onDeleteEvent(selected)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Usuń wydarzenie"
+              style={{ padding: 6 }}
+            >
+              <Ionicons name="trash-outline" size={18} color={colors.danger} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onClearSelection}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Zamknij podgląd"
+            style={{ padding: 4 }}
+          >
             <Ionicons name="close" size={18} color={colors.muted} />
           </Pressable>
-        </Pressable>
+        </View>
       ) : null}
     </Animated.View>
   );
@@ -145,8 +164,16 @@ const styles = StyleSheet.create({
   handle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   headTitle: { ...font.bodyBold, color: colors.ink },
-  toggleText: { ...font.small, color: colors.inkSoft },
-  list: { padding: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.xl },
+  scrollContent: {
+    padding: spacing.md,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xl,
+  },
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   preview: {
     flexDirection: 'row',
     alignItems: 'center',
