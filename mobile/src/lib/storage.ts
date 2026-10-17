@@ -27,8 +27,8 @@ export async function removeKey(key: string): Promise<void> {
 }
 
 export const KEYS = {
-  users: 'mojtorun.demo.users.v1',
-  session: 'mojtorun.demo.session.v1',
-  data: 'mojtorun.demo.data.v1',
+  users: 'nasztorun.demo.users.v1',
+  session: 'nasztorun.demo.session.v1',
+  data: 'nasztorun.demo.data.v1',
 };
 

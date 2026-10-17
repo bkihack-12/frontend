@@ -54,9 +54,13 @@ export function NearbyPanel({
   const stateRef = useRef({ open, peekH, openH, onOpenChange });
   stateRef.current = { open, peekH, openH, onOpenChange };
 
+  const scrollYRef = useRef(0);
+  const touchDragRef = useRef({ startY: 0, active: false });
+
   useEffect(() => {
+    if (!open) scrollYRef.current = 0;
     Animated.timing(height, { toValue: target, duration: 220, useNativeDriver: false }).start();
-  }, [target, height]);
+  }, [target, height, open]);
 
   const handlePan = useMemo(
     () =>
@@ -86,11 +90,19 @@ export function NearbyPanel({
     [height],
   );
 
-  const previewSwipePan = useMemo(
+  const bodyPan = useMemo(
     () =>
       PanResponder.create({
-        onMoveShouldSetPanResponderCapture: (_e, gs) =>
-          Math.abs(gs.dy) > 8 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onMoveShouldSetPanResponder: (_e, gs) => {
+          const { open: isOpen } = stateRef.current;
+          if (!isOpen) return Math.abs(gs.dy) > 8 && Math.abs(gs.dy) > Math.abs(gs.dx);
+          return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10;
+        },
+        onMoveShouldSetPanResponderCapture: (_e, gs) => {
+          const { open: isOpen } = stateRef.current;
+          if (!isOpen) return Math.abs(gs.dy) > 8 && Math.abs(gs.dy) > Math.abs(gs.dx);
+          return gs.dy > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10;
+        },
         onPanResponderMove: (_e, gs) => {
           const { open: isOpen, peekH: pH, openH: oH } = stateRef.current;
           const base = isOpen ? oH : pH;
@@ -98,13 +110,61 @@ export function NearbyPanel({
           height.setValue(next);
         },
         onPanResponderRelease: (_e, gs) => {
-          const { onOpenChange: setOpen } = stateRef.current;
-          if (gs.dy < -16) setOpen(true);
-          else if (gs.dy > 16) setOpen(false);
+          const { open: isOpen, peekH: pH, openH: oH, onOpenChange: setOpen } = stateRef.current;
+          if (gs.dy < -18) setOpen(true);
+          else if (gs.dy > 18) setOpen(false);
+          else {
+            const base = isOpen ? oH : pH;
+            const finalH = base - gs.dy;
+            setOpen(finalH > (pH + oH) / 2);
+          }
         },
       }),
     [height],
   );
+
+  const scrollDragProps = {
+    scrollEventThrottle: 16,
+    bounces: false,
+    overScrollMode: 'never' as const,
+    onScroll: (e: { nativeEvent: { contentOffset: { y: number } } }) => {
+      scrollYRef.current = e.nativeEvent.contentOffset.y;
+    },
+    onTouchStart: (e: { nativeEvent: { pageY?: number } }) => {
+      touchDragRef.current = {
+        startY: e.nativeEvent.pageY ?? 0,
+        active: scrollYRef.current <= 10,
+      };
+    },
+    onTouchMove: (e: { nativeEvent: { pageY?: number } }) => {
+      const y = e.nativeEvent.pageY ?? 0;
+      if (!touchDragRef.current.active) {
+        if (scrollYRef.current <= 2) {
+          touchDragRef.current = { startY: y, active: true };
+        }
+        return;
+      }
+      const dy = y - touchDragRef.current.startY;
+      if (dy > 8) {
+        const { peekH: pH, openH: oH } = stateRef.current;
+        height.setValue(Math.max(pH, Math.min(oH, oH - dy)));
+      }
+    },
+    onTouchEnd: (e: { nativeEvent: { pageY?: number } }) => {
+      if (!touchDragRef.current.active) return;
+      const dy = (e.nativeEvent.pageY ?? 0) - touchDragRef.current.startY;
+      touchDragRef.current.active = false;
+      if (dy > 24) {
+        stateRef.current.onOpenChange(false);
+      } else if (dy > 0) {
+        Animated.timing(height, {
+          toValue: stateRef.current.openH,
+          duration: 180,
+          useNativeDriver: false,
+        }).start();
+      }
+    },
+  };
 
   const ticketedEvents = useMemo(
     () => (onlyMyEvents ? events.filter((e) => !e.isFree) : []),
@@ -130,7 +190,7 @@ export function NearbyPanel({
   };
 
   return (
-    <Animated.View style={[styles.panel, { height }]}>
+    <Animated.View {...bodyPan.panHandlers} style={[styles.panel, { height }]}>
       <View
         {...handlePan.panHandlers}
         style={styles.handleArea}
@@ -201,6 +261,7 @@ export function NearbyPanel({
           />
         ) : onlyMyEvents ? (
           <ScrollView
+            {...scrollDragProps}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
@@ -246,6 +307,7 @@ export function NearbyPanel({
           </ScrollView>
         ) : (
           <ScrollView
+            {...scrollDragProps}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
           >
@@ -253,7 +315,7 @@ export function NearbyPanel({
           </ScrollView>
         )
       ) : selected ? (
-        <View {...previewSwipePan.panHandlers} style={styles.preview}>
+        <View style={styles.preview}>
           <Pressable onPress={() => onOpenEvent(selected)} style={{ flex: 1 }}>
             <Text style={styles.previewTitle} numberOfLines={1}>
               {selected.title}

@@ -123,7 +123,7 @@ export default function SpolecznoscScreen() {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title="Społeczność" />
+      <ScreenHeader title="NaszToruń" />
 
       <View style={styles.mapArea} onLayout={(e) => setMapHeight(e.nativeEvent.layout.height)}>
         <TorunMap

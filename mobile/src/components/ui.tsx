@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Modal,
   KeyboardAvoidingView,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -301,6 +303,45 @@ export function Sheet({
   fullHeight?: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const translateY = useRef(new Animated.Value(0)).current;
+  const scrollYRef = useRef(0);
+  const touchDragRef = useRef({ startY: 0, active: false });
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (visible) {
+      translateY.setValue(0);
+      scrollYRef.current = 0;
+    }
+  }, [visible, translateY]);
+
+  const sheetPan = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, gs) =>
+          gs.dy > 12 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10,
+        onMoveShouldSetPanResponderCapture: (_e, gs) =>
+          gs.dy > 12 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.15 && scrollYRef.current <= 10,
+        onPanResponderMove: (_e, gs) => {
+          translateY.setValue(Math.max(0, gs.dy));
+        },
+        onPanResponderRelease: (_e, gs) => {
+          if (gs.dy > 48) {
+            onCloseRef.current();
+            translateY.setValue(0);
+          } else {
+            Animated.timing(translateY, {
+              toValue: 0,
+              duration: 180,
+              useNativeDriver: false,
+            }).start();
+          }
+        },
+      }),
+    [translateY],
+  );
+
   return (
     <Modal
       visible={visible}
@@ -320,11 +361,15 @@ export function Sheet({
           accessibilityLabel="Zamknij"
           accessibilityRole="button"
         />
-        <View
+        <Animated.View
+          {...sheetPan.panHandlers}
           style={[
             styles.sheet,
             fullHeight && { height: '90%' },
-            { paddingBottom: Math.max(insets.bottom + spacing.lg, 32) },
+            {
+              paddingBottom: Math.max(insets.bottom + spacing.lg, 32),
+              transform: [{ translateY }],
+            },
           ]}
         >
           <View style={styles.sheetHandle} />
@@ -347,11 +392,51 @@ export function Sheet({
             contentContainerStyle={{ paddingBottom: spacing.xl }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            scrollEventThrottle={16}
+            bounces={false}
+            overScrollMode="never"
+            onScroll={(e) => {
+              scrollYRef.current = e.nativeEvent.contentOffset.y;
+            }}
+            onTouchStart={(e) => {
+              touchDragRef.current = {
+                startY: e.nativeEvent.pageY ?? 0,
+                active: scrollYRef.current <= 10,
+              };
+            }}
+            onTouchMove={(e) => {
+              const y = e.nativeEvent.pageY ?? 0;
+              if (!touchDragRef.current.active) {
+                if (scrollYRef.current <= 2) {
+                  touchDragRef.current = { startY: y, active: true };
+                }
+                return;
+              }
+              const dy = y - touchDragRef.current.startY;
+              if (dy > 8) {
+                translateY.setValue(Math.max(0, dy));
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (!touchDragRef.current.active) return;
+              const dy = (e.nativeEvent.pageY ?? 0) - touchDragRef.current.startY;
+              touchDragRef.current.active = false;
+              if (dy > 48) {
+                onCloseRef.current();
+                translateY.setValue(0);
+              } else if (dy > 0) {
+                Animated.timing(translateY, {
+                  toValue: 0,
+                  duration: 180,
+                  useNativeDriver: false,
+                }).start();
+              }
+            }}
           >
             {children}
           </ScrollView>
           {footer ? <View style={styles.sheetFooter}>{footer}</View> : null}
-        </View>
+        </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
   );

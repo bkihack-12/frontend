@@ -22,7 +22,7 @@ function demoHash(input: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
-export const DEMO_ACCOUNT = { name: 'Ania Demo', email: 'demo@mojtorun.pl', password: 'demo123' };
+export const DEMO_ACCOUNT = { name: 'Ania Demo', email: 'demo@nasztorun.pl', password: 'demo123' };
 
 export type AuthMode = 'login' | 'register' | 'account';
 interface AuthSheetState {

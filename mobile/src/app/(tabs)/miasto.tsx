@@ -27,7 +27,7 @@ export default function MiastoScreen() {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title="Korzyści" />
+      <ScreenHeader title="NaszToruń" />
 
       <View style={styles.contentArea}>
         {loading ? (
