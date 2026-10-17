@@ -477,16 +477,42 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     });
   }, []);
 
+  const hitTestRef = useRef<{
+    singles: { event: CityEvent; x: number; y: number }[];
+    clusters: Cluster[];
+    markers: { id: string; x: number; y: number }[];
+    stops: { id: string; x: number; y: number }[];
+    polylines: {
+      id: string;
+      pts: { x: number; y: number }[];
+      mid: { x: number; y: number };
+      faint?: boolean;
+      selected: boolean;
+    }[];
+    selectedId: string | null | undefined;
+    onSelect: (id: string | null) => void;
+  }>({
+    singles: [],
+    clusters: [],
+    markers: [],
+    stops: [],
+    polylines: [],
+    selectedId: null,
+    onSelect: () => {},
+  });
+
   const pan = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_e, gs) =>
+          Math.abs(gs.dx) > 7 || Math.abs(gs.dy) > 7,
         onMoveShouldSetPanResponderCapture: (_e, gs) =>
-          Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
-        onPanResponderTerminationRequest: () => false,
+          Math.abs(gs.dx) > 7 || Math.abs(gs.dy) > 7,
+        onPanResponderTerminationRequest: () => true,
         onPanResponderGrant: (e, gs) => {
           cancelAnim();
+          measure();
           const r = readTouches(e);
           gesture.current = {
             touches: r.n,
@@ -535,8 +561,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           };
         },
         onPanResponderRelease: (e, gs) => {
-          if (!onPickPointRef.current) return;
-          if (Math.hypot(gs.dx, gs.dy) >= 6) return;
+          if (Math.hypot(gs.dx, gs.dy) >= 9) return;
           const ne = e.nativeEvent as unknown as {
             clientX?: number;
             clientY?: number;
@@ -545,33 +570,155 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             locationX?: number;
             locationY?: number;
           };
-          let lx = ne.locationX;
-          let ly = ne.locationY;
+          let lx: number | undefined;
+          let ly: number | undefined;
           const node = containerRef.current as unknown as {
             getBoundingClientRect?: () => { left: number; top: number };
           } | null;
-          if (node?.getBoundingClientRect && (ne.clientX !== undefined || ne.pageX !== undefined)) {
+
+          if (
+            Platform.OS === 'web' &&
+            node?.getBoundingClientRect &&
+            (ne.clientX !== undefined || ne.pageX !== undefined)
+          ) {
             const rect = node.getBoundingClientRect();
             lx = (ne.clientX ?? ne.pageX ?? 0) - rect.left;
             ly = (ne.clientY ?? ne.pageY ?? 0) - rect.top;
-          } else if (!Number.isFinite(lx) || !Number.isFinite(ly)) {
+          } else if (Number.isFinite(ne.locationX) && Number.isFinite(ne.locationY)) {
+            lx = ne.locationX;
+            ly = ne.locationY;
+          } else {
             const r = readTouches(e);
             lx = r.mx - containerOffset.current.x;
             ly = r.my - containerOffset.current.y;
           }
+
           const { w, h } = sizeRef.current;
           if (w <= 0 || h <= 0 || lx === undefined || ly === undefined) return;
-          const v = viewRef.current;
-          const s = Math.pow(2, v.zoom);
-          const wx = v.cx + (lx - w / 2) / s;
-          const wy = v.cy + (ly - h / 2) / s;
-          const pt = unproject(wx, wy, 0);
-          if (Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) {
-            onPickPointRef.current(pt);
+
+          /* Tryb zaznaczania punktu dla nowego wydarzenia */
+          if (onPickPointRef.current) {
+            const v = viewRef.current;
+            const s = Math.pow(2, v.zoom);
+            const wx = v.cx + (lx - w / 2) / s;
+            const wy = v.cy + (ly - h / 2) / s;
+            const pt = unproject(wx, wy, 0);
+            if (Number.isFinite(pt.lat) && Number.isFinite(pt.lng)) {
+              onPickPointRef.current(pt);
+            }
+            return;
+          }
+
+          /* Hit-test elementów na mapie (szczególnie ważne na urządzeniach mobilnych oraz dla linii ulic/tras) */
+          const ht = hitTestRef.current;
+
+          // 1. Pojedyncze wydarzenia
+          let bestEvent: { id: string; d: number } | null = null;
+          for (const item of ht.singles) {
+            const d = Math.hypot(item.x - lx, item.y - ly);
+            if (d <= 32 && (!bestEvent || d < bestEvent.d)) {
+              bestEvent = { id: item.event.id, d };
+            }
+          }
+          if (bestEvent) {
+            ht.onSelect(bestEvent.id === ht.selectedId ? null : bestEvent.id);
+            return;
+          }
+
+          // 2. Klastry wydarzeń
+          for (const c of ht.clusters) {
+            if (Math.hypot(c.x - lx, c.y - ly) <= 32) {
+              const s = Math.pow(2, viewRef.current.zoom);
+              const target = unproject(
+                viewRef.current.cx + (c.x - w / 2) / s,
+                viewRef.current.cy + (c.y - h / 2) / s,
+                0,
+              );
+              animateTo(viewFor(target, Math.min(MAX_ZOOM, viewRef.current.zoom + 1.5)));
+              return;
+            }
+          }
+
+          // 3. Znaczniki utrudnień (Ruch / Komunikacja)
+          let bestMarker: { id: string; d: number } | null = null;
+          for (const m of ht.markers) {
+            const d = Math.hypot(m.x - lx, m.y - ly);
+            if (d <= 32 && (!bestMarker || d < bestMarker.d)) {
+              bestMarker = { id: m.id, d };
+            }
+          }
+          if (bestMarker) {
+            ht.onSelect(bestMarker.id === ht.selectedId ? null : bestMarker.id);
+            return;
+          }
+
+          // 4. Przystanki MZK
+          let bestStop: { id: string; d: number } | null = null;
+          for (const st of ht.stops) {
+            const d = Math.hypot(st.x - lx, st.y - ly);
+            if (d <= 28 && (!bestStop || d < bestStop.d)) {
+              bestStop = { id: st.id, d };
+            }
+          }
+          if (bestStop) {
+            ht.onSelect(bestStop.id === ht.selectedId ? null : bestStop.id);
+            return;
+          }
+
+          // 5. Odcinki ulic / trasy komunikacji (polylines)
+          const distToSeg = (
+            px: number,
+            py: number,
+            x1: number,
+            y1: number,
+            x2: number,
+            y2: number,
+          ) => {
+            const dx = x2 - x1;
+            const dy = y2 - y1;
+            const l2 = dx * dx + dy * dy;
+            if (l2 === 0) return Math.hypot(px - x1, py - y1);
+            const t = clamp(((px - x1) * dx + (py - y1) * dy) / l2, 0, 1);
+            return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+          };
+
+          let bestPoly: { id: string; d: number; faint?: boolean } | null = null;
+          for (const pl of ht.polylines) {
+            let minD = Math.hypot(pl.mid.x - lx, pl.mid.y - 14 - ly);
+            for (let i = 0; i < pl.pts.length - 1; i++) {
+              const d = distToSeg(
+                lx,
+                ly,
+                pl.pts[i].x,
+                pl.pts[i].y,
+                pl.pts[i + 1].x,
+                pl.pts[i + 1].y,
+              );
+              if (d < minD) minD = d;
+            }
+            const threshold = pl.faint ? 18 : 26;
+            if (minD <= threshold) {
+              if (
+                !bestPoly ||
+                (bestPoly.faint && !pl.faint) ||
+                (Boolean(bestPoly.faint) === Boolean(pl.faint) && minD < bestPoly.d)
+              ) {
+                bestPoly = { id: pl.id, d: minD, faint: pl.faint };
+              }
+            }
+          }
+          if (bestPoly) {
+            ht.onSelect(bestPoly.id === ht.selectedId ? null : bestPoly.id);
+            return;
+          }
+
+          // 6. Kliknięcie w pusty obszar mapy usuwa aktywny focus
+          if (ht.selectedId) {
+            ht.onSelect(null);
           }
         },
       }),
-    [apply, cancelAnim, zoomAround],
+    [animateTo, apply, cancelAnim, measure, zoomAround],
   );
 
   useEffect(() => {
@@ -697,6 +844,17 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       })
       .filter((item): item is NonNullable<typeof item> => item !== null);
   }, [polylines, size.w, toScreen, selectedId]);
+
+  /* Aktualizacja referencji dla hit-testingu mobilnego i czyszczenia focusu */
+  hitTestRef.current = {
+    singles,
+    clusters,
+    markers: markers.map((m) => ({ id: m.id, ...toScreen(m) })),
+    stops: stops.map((s) => ({ id: s.id, ...toScreen(s) })),
+    polylines: screenPolylines,
+    selectedId,
+    onSelect,
+  };
 
   /* ----- Vector basemap paths (always rendered beneath / when tiles not loaded) ----- */
   const riverPoints = useMemo(
@@ -908,18 +1066,22 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       ) : null}
 
       {/* Etykiety długości zapchanych ulic / zweryfikowanych odcinków utrudnień na mapie */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents={onPickPoint ? 'none' : 'box-none'}
+      >
         {screenPolylines.map((pl) => {
           if (!pl.label || pl.faint) return null;
           return (
             <Pressable
               key={`lbl-${pl.id}`}
+              hitSlop={12}
               onPress={() => onSelect(pl.selected ? null : pl.id)}
               style={[
                 styles.segmentLabel,
                 {
-                  left: pl.mid.x - 48,
-                  top: pl.mid.y - 28,
+                  left: pl.mid.x - 52,
+                  top: pl.mid.y - 30,
                   borderColor: pl.color,
                   backgroundColor: pl.selected ? pl.color : '#FFFFFF',
                 },
@@ -946,7 +1108,10 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
       </View>
 
       {/* Przystanki komunikacji miejskiej, znaczniki wydarzeń oraz zgłoszeń */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View
+        style={StyleSheet.absoluteFill}
+        pointerEvents={onPickPoint ? 'none' : 'box-none'}
+      >
         {stops.map((s) => {
           const pt = toScreen(s);
           if (pt.x < -60 || pt.y < -60 || pt.x > size.w + 60 || pt.y > size.h + 60) return null;
@@ -954,10 +1119,11 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           return (
             <Pressable
               key={s.id}
+              hitSlop={10}
               onPress={() => onSelect(selected ? null : s.id)}
               style={[
                 styles.stopHit,
-                { left: pt.x - 14, top: pt.y - 14, zIndex: selected ? 55 : 3 },
+                { left: pt.x - 21, top: pt.y - 21, zIndex: selected ? 55 : 3 },
               ]}
             >
               {selected ? (
@@ -977,7 +1143,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                   },
                 ]}
               >
-                <Ionicons name="bus" size={11} color={selected ? '#FFFFFF' : colors.river} />
+                <Ionicons name="bus" size={12} color={selected ? '#FFFFFF' : colors.river} />
               </View>
             </Pressable>
           );
@@ -986,6 +1152,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         {clusters.map((c) => (
           <Pressable
             key={`cl-${c.key}`}
+            hitSlop={10}
             onPress={() => {
               const target = unproject(
                 (viewRef.current.cx + (c.x - size.w / 2) / scale) * Math.pow(2, 0),
@@ -994,7 +1161,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
               );
               animateTo(viewFor(target, Math.min(MAX_ZOOM, view.zoom + 1.5)));
             }}
-            style={[styles.clusterHit, { left: c.x - 21, top: c.y - 21 }]}
+            style={[styles.clusterHit, { left: c.x - 27, top: c.y - 27 }]}
           >
             <View style={styles.cluster}>
               <Text style={styles.clusterText}>{c.members.length}</Text>
@@ -1008,10 +1175,11 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           return (
             <Pressable
               key={event.id}
+              hitSlop={10}
               onPress={() => onSelect(selected ? null : event.id)}
               style={[
                 styles.markerHit,
-                { left: x - 20, top: y - 42, zIndex: selected ? 50 : 2 },
+                { left: x - 26, top: y - 26, zIndex: selected ? 50 : 2 },
               ]}
             >
               {selected ? (
@@ -1028,7 +1196,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                   selected && { transform: [{ scale: 1.18 }], borderColor: colors.ink },
                 ]}
               >
-                <Ionicons name={meta.icon as never} size={15} color="#fff" />
+                <Ionicons name={meta.icon as never} size={16} color="#fff" />
               </View>
             </Pressable>
           );
@@ -1041,10 +1209,11 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           return (
             <Pressable
               key={m.id}
+              hitSlop={10}
               onPress={() => onSelect(selected ? null : m.id)}
               style={[
                 styles.markerHit,
-                { left: pt.x - 20, top: pt.y - 20, zIndex: selected ? 60 : 5 },
+                { left: pt.x - 26, top: pt.y - 26, zIndex: selected ? 60 : 5 },
               ]}
             >
               {selected ? (
@@ -1061,7 +1230,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                   selected && { transform: [{ scale: 1.18 }], borderColor: colors.ink },
                 ]}
               >
-                <Ionicons name={m.icon} size={15} color="#fff" />
+                <Ionicons name={m.icon} size={16} color="#fff" />
               </View>
             </Pressable>
           );
@@ -1075,7 +1244,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                   pointerEvents="none"
                   style={[
                     styles.markerHit,
-                    { left: pt.x - 20, top: pt.y - 22, zIndex: 90 },
+                    { left: pt.x - 26, top: pt.y - 26, zIndex: 90 },
                   ]}
                 >
                   <View style={[styles.markerLabel, { backgroundColor: colors.brick }]}>
@@ -1089,11 +1258,11 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                       {
                         backgroundColor: colors.brick,
                         borderColor: '#FFFFFF',
-                        transform: [{ scale: 1.25 }],
+                        transform: [{ scale: 1.22 }],
                       },
                     ]}
                   >
-                    <Ionicons name="location" size={17} color="#FFFFFF" />
+                    <Ionicons name="location" size={18} color="#FFFFFF" />
                   </View>
                 </View>
               );
@@ -1139,6 +1308,7 @@ function MapButton({
   return (
     <Pressable
       onPress={onPress}
+      hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel={label}
       style={({ pressed }) => [
@@ -1147,7 +1317,7 @@ function MapButton({
         pressed && { opacity: 0.85 },
       ]}
     >
-      <Ionicons name={icon} size={18} color={active ? '#fff' : colors.inkSoft} />
+      <Ionicons name={icon} size={20} color={active ? '#fff' : colors.inkSoft} />
     </Pressable>
   );
 }
@@ -1195,15 +1365,15 @@ const styles = StyleSheet.create({
   },
   stopHit: {
     position: 'absolute',
-    width: 28,
-    height: 28,
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stopPin: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     backgroundColor: '#FFFFFF',
     borderWidth: 2,
     borderColor: colors.river,
@@ -1211,33 +1381,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.card,
   },
-  markerHit: { position: 'absolute', width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  markerHit: {
+    position: 'absolute',
+    width: 52,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   markerLabel: {
     position: 'absolute',
-    top: -26,
-    maxWidth: 200,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    top: -24,
+    maxWidth: 210,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: radius.pill,
     backgroundColor: colors.ink,
     alignSelf: 'center',
   },
   markerLabelText: { color: '#fff', fontSize: 11, fontWeight: '600' },
   pin: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     borderWidth: 2.5,
     borderColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
     ...shadow.card,
   },
-  clusterHit: { position: 'absolute', width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+  clusterHit: {
+    position: 'absolute',
+    width: 54,
+    height: 54,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   cluster: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: colors.river,
     borderWidth: 2.5,
     borderColor: '#fff',
@@ -1245,26 +1427,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.card,
   },
-  clusterText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  clusterText: { color: '#fff', fontWeight: '700', fontSize: 14 },
   segmentLabel: {
     position: 'absolute',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: radius.pill,
     borderWidth: 1.5,
     ...shadow.card,
   },
   segmentDot: { width: 6, height: 6, borderRadius: 3 },
   segmentLabelText: { fontSize: 11, fontWeight: '700' },
-  controls: { position: 'absolute', right: spacing.md, gap: 6 },
+  controls: { position: 'absolute', right: spacing.md, gap: 8 },
   mapBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.96)',
     borderWidth: 1,
     borderColor: colors.line,
     alignItems: 'center',

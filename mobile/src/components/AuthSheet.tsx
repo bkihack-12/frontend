@@ -42,6 +42,7 @@ export function AuthSheet() {
       ) : (
         <View>
           <PitProfileCard />
+          <MyEventsSection />
 
           {sheet?.reason ? (
             <View style={{ marginBottom: spacing.md }}>
@@ -80,6 +81,109 @@ export function AuthSheet() {
         </View>
       )}
     </Sheet>
+  );
+}
+
+/** Lista „Moje wydarzenia” z podziałem na Biletowane oraz Wstęp wolny. */
+function MyEventsSection() {
+  const { user } = useAuth();
+  const { events, isMyEvent, isInterested, toggleInterested, getBooking, cancelBooking } = useAppData();
+  const { showToast } = useToast();
+
+  const myEvents = events.filter((e) => isMyEvent(e.id));
+  if (myEvents.length === 0) return null;
+
+  const ticketed = myEvents.filter((e) => !e.isFree);
+  const free = myEvents.filter((e) => e.isFree);
+
+  const handleRemove = async (evId: string, isFreeEvent: boolean) => {
+    const booking = getBooking(evId);
+    if (booking) {
+      await cancelBooking(evId, user);
+    }
+    if (isInterested(evId)) {
+      toggleInterested(evId);
+    }
+    showToast(
+      isFreeEvent ? 'Usunięto z Moich wydarzeń' : 'Zwrócono bilet i usunięto z listy',
+      'info',
+    );
+  };
+
+  return (
+    <View style={{ marginBottom: spacing.md }}>
+      <Text style={[font.h3, { marginBottom: spacing.xs }]}>
+        Moje wydarzenia ({myEvents.length})
+      </Text>
+
+      {/* Podsekcja 1: Biletowane */}
+      <Text style={styles.myEventsSubhead}>Biletowane ({ticketed.length})</Text>
+      {ticketed.length === 0 ? (
+        <Text style={styles.myEventsEmpty}>Brak kupionych biletów</Text>
+      ) : (
+        ticketed.map((ev) => {
+          const b = getBooking(ev.id);
+          return (
+            <View key={ev.id} style={styles.booking}>
+              <Ionicons name="ticket-outline" size={17} color={colors.brick} />
+              <View style={{ flex: 1 }}>
+                <Text style={font.bodyBold} numberOfLines={1}>
+                  {ev.title}
+                </Text>
+                <Text style={font.small} numberOfLines={1}>
+                  {ev.venue} · {formatDateTime(ev.startsAt)}
+                  {b ? ` · Kod: ${b.code}` : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => handleRemove(ev.id, false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Usuń ${ev.title} z Moich wydarzeń`}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="close-circle-outline" size={18} color={colors.muted} />
+              </Pressable>
+            </View>
+          );
+        })
+      )}
+
+      {/* Podsekcja 2: Wstęp wolny */}
+      <Text style={[styles.myEventsSubhead, { marginTop: spacing.xs }]}>
+        Wstęp wolny ({free.length})
+      </Text>
+      {free.length === 0 ? (
+        <Text style={styles.myEventsEmpty}>Brak wybranych wydarzeń z wolnym wstępem</Text>
+      ) : (
+        free.map((ev) => {
+          const b = getBooking(ev.id);
+          return (
+            <View key={ev.id} style={styles.booking}>
+              <Ionicons name="walk-outline" size={17} color={colors.success} />
+              <View style={{ flex: 1 }}>
+                <Text style={font.bodyBold} numberOfLines={1}>
+                  {ev.title}
+                </Text>
+                <Text style={font.small} numberOfLines={1}>
+                  {ev.venue} · {formatDateTime(ev.startsAt)}
+                  {b ? ` · Zapis: ${b.code}` : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => handleRemove(ev.id, true)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Usuń ${ev.title} z Moich wydarzeń`}
+                style={{ padding: 4 }}
+              >
+                <Ionicons name="close-circle-outline" size={18} color={colors.muted} />
+              </Pressable>
+            </View>
+          );
+        })
+      )}
+    </View>
   );
 }
 
@@ -359,13 +463,13 @@ function NotificationsPanel() {
 
 function AccountView() {
   const { user, logout, closeAuth } = useAuth();
-  const { myBookings, events, savedOffers, isInterested, civicMessages, unreadNotificationCount } = useAppData();
+  const { myBookings, events, savedOffers, isMyEvent, civicMessages, unreadNotificationCount } = useAppData();
   const { showToast } = useToast();
   const [subTab, setSubTab] = useState<'notifications' | 'profile'>('profile');
 
   if (!user) return null;
 
-  const interestedCount = events.filter((e) => isInterested(e.id)).length;
+  const myEventsCount = events.filter((e) => isMyEvent(e.id)).length;
   const booked = myBookings
     .map((b) => ({ b, e: events.find((x) => x.id === b.eventId) }))
     .filter((x) => !!x.e);
@@ -417,29 +521,14 @@ function AccountView() {
         <View>
           <View style={styles.stats}>
             <Stat n={booked.length} label="Bilety" />
-            <Stat n={interestedCount} label="Wydarzenia" />
+            <Stat n={myEventsCount} label="Moje wyd." />
             <Stat n={savedOffers.length} label="Zniżki" />
             <Stat n={myCivic.length} label="Pisma" />
           </View>
 
-          {booked.length > 0 ? (
-            <>
-              <Text style={[font.h3, { marginTop: spacing.md, marginBottom: spacing.xs }]}>Rezerwacje</Text>
-              {booked.map(({ b, e }) => (
-                <View key={b.eventId} style={styles.booking}>
-                  <Ionicons name="ticket-outline" size={17} color={colors.brick} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={font.bodyBold} numberOfLines={1}>
-                      {e!.title}
-                    </Text>
-                    <Text style={font.small}>
-                      {formatDateTime(e!.startsAt)} · {b.code}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </>
-          ) : null}
+          <View style={{ marginTop: spacing.md }}>
+            <MyEventsSection />
+          </View>
         </View>
       )}
 
@@ -467,6 +556,17 @@ function Stat({ n, label }: { n: number; label: string }) {
 }
 
 const styles = StyleSheet.create({
+  myEventsSubhead: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.inkSoft,
+    marginBottom: 6,
+  },
+  myEventsEmpty: {
+    ...font.small,
+    color: colors.muted,
+    marginBottom: 8,
+  },
   pitCard: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -58,48 +58,55 @@ export function EventCard({
   const meta = CATEGORY_META[event.category];
 
   return (
-    <Pressable
-      onPress={onOpen}
-      accessibilityRole="button"
-      accessibilityLabel={`${event.title}, ${event.venue}`}
-      style={({ pressed }) => [
+    <View
+      style={[
         styles.gridTile,
         highlight && { borderColor: colors.brick, backgroundColor: '#FDFBFB' },
-        pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
       ]}
     >
-      <View style={styles.topRow}>
-        <View style={[styles.catBadge, { backgroundColor: `${meta.color}18` }]}>
-          <Ionicons name={meta.icon as never} size={15} color={meta.color} />
-        </View>
-        <Text style={styles.dateText} numberOfLines={1}>
-          {formatDateTime(event.startsAt)}
-        </Text>
-        {onDelete ? (
-          <Pressable
-            onPress={(e) => {
-              e.stopPropagation?.();
-              onDelete();
-            }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Usuń ${event.title}`}
-            style={styles.trashBtn}
+      <Pressable
+        onPress={onOpen}
+        accessibilityRole="button"
+        accessibilityLabel={`${event.title}, ${event.venue}`}
+        style={({ pressed }) => [
+          styles.cardBodyBtn,
+          pressed && { opacity: 0.88, transform: [{ scale: 0.99 }] },
+        ]}
+      >
+        <View style={styles.topRow}>
+          <View style={[styles.catBadge, { backgroundColor: `${meta.color}18` }]}>
+            <Ionicons name={meta.icon as never} size={15} color={meta.color} />
+          </View>
+          <Text
+            style={[styles.dateText, onDelete && { paddingRight: 22 }]}
+            numberOfLines={1}
           >
-            <Ionicons name="trash-outline" size={14} color={colors.muted} />
-          </Pressable>
-        ) : null}
-      </View>
+            {formatDateTime(event.startsAt)}
+          </Text>
+        </View>
 
-      <View style={styles.textGroup}>
-        <Text style={styles.title} numberOfLines={2}>
-          {event.title}
-        </Text>
-        <Text style={styles.venueText} numberOfLines={1}>
-          {event.venue}
-        </Text>
-      </View>
-    </Pressable>
+        <View style={styles.textGroup}>
+          <Text style={styles.title} numberOfLines={2}>
+            {event.title}
+          </Text>
+          <Text style={styles.venueText} numberOfLines={1}>
+            {event.venue}
+          </Text>
+        </View>
+      </Pressable>
+
+      {onDelete ? (
+        <Pressable
+          onPress={onDelete}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel={`Usuń ${event.title}`}
+          style={styles.trashBtn}
+        >
+          <Ionicons name="trash-outline" size={14} color={colors.muted} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 
@@ -110,12 +117,16 @@ const styles = StyleSheet.create({
     minWidth: 148,
     backgroundColor: colors.surface,
     borderRadius: radius.lg,
-    padding: spacing.md,
     borderWidth: 1,
     borderColor: colors.line,
+    position: 'relative',
+    ...shadow.card,
+  },
+  cardBodyBtn: {
+    flex: 1,
+    padding: spacing.md,
     justifyContent: 'space-between',
     gap: 10,
-    ...shadow.card,
   },
   topRow: {
     flexDirection: 'row',
@@ -138,8 +149,10 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   trashBtn: {
+    position: 'absolute',
+    top: spacing.md + 3,
+    right: spacing.md - 2,
     padding: 4,
-    marginLeft: 2,
   },
   textGroup: {
     gap: 3,

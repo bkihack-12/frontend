@@ -282,12 +282,14 @@ export function BoardScreen({
     setStopFilter('all');
   }, []);
 
-  /* ----- Bottom sheet panel animation ----- */
+  /* ----- Bottom sheet panel animation (płynne przesuwanie palcem) ----- */
   const hasPreview = Boolean(selectedItem || selectedStop);
   const peekH = hasPreview ? PEEK_SELECTED : PEEK_EMPTY;
-  const openH = Math.max(PEEK_SELECTED + 40, mapHeight * 0.72);
+  const openH = Math.max(PEEK_SELECTED + 60, mapHeight * 0.74);
   const target = panelOpen ? openH : peekH;
   const height = useRef(new Animated.Value(target)).current;
+  const panelStateRef = useRef({ panelOpen, peekH, openH });
+  panelStateRef.current = { panelOpen, peekH, openH };
 
   useEffect(() => {
     Animated.timing(height, { toValue: target, duration: 220, useNativeDriver: false }).start();
@@ -297,14 +299,63 @@ export function BoardScreen({
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_e, gs) => Math.abs(gs.dy) > 5,
+        onMoveShouldSetPanResponderCapture: (_e, gs) =>
+          Math.abs(gs.dy) > 7 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderMove: (_e, gs) => {
+          const { panelOpen: isOpen, peekH: pH, openH: oH } = panelStateRef.current;
+          const base = isOpen ? oH : pH;
+          const next = Math.max(pH, Math.min(oH, base - gs.dy));
+          height.setValue(next);
+        },
         onPanResponderRelease: (_e, gs) => {
-          if (gs.dy < -20) setPanelOpen(true);
-          else if (gs.dy > 20) setPanelOpen(false);
-          else setPanelOpen((v) => !v);
+          const { panelOpen: isOpen, peekH: pH, openH: oH } = panelStateRef.current;
+          if (gs.dy < -18) setPanelOpen(true);
+          else if (gs.dy > 18) setPanelOpen(false);
+          else if (Math.abs(gs.dy) < 6) setPanelOpen((v) => !v);
+          else {
+            const base = isOpen ? oH : pH;
+            const finalH = base - gs.dy;
+            setPanelOpen(finalH > (pH + oH) / 2);
+          }
         },
       }),
-    [],
+    [height],
   );
+
+  const previewSwipePan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: (_e, gs) => Math.abs(gs.dy) > 5,
+        onMoveShouldSetPanResponderCapture: (_e, gs) =>
+          Math.abs(gs.dy) > 7 && Math.abs(gs.dy) > Math.abs(gs.dx),
+        onPanResponderMove: (_e, gs) => {
+          const { panelOpen: isOpen, peekH: pH, openH: oH } = panelStateRef.current;
+          const base = isOpen ? oH : pH;
+          const next = Math.max(pH, Math.min(oH, base - gs.dy));
+          height.setValue(next);
+        },
+        onPanResponderRelease: (_e, gs) => {
+          const { panelOpen: isOpen, peekH: pH, openH: oH } = panelStateRef.current;
+          if (gs.dy < -16) setPanelOpen(true);
+          else if (gs.dy > 16) setPanelOpen(false);
+          else {
+            const base = isOpen ? oH : pH;
+            const finalH = base - gs.dy;
+            setPanelOpen(finalH > (pH + oH) / 2);
+          }
+        },
+      }),
+    [height],
+  );
+
+  const orderedFiltered = useMemo(() => {
+    if (!selectedId) return filtered;
+    const sel = filtered.find((i) => i.id === selectedId);
+    if (!sel) return filtered;
+    return [sel, ...filtered.filter((i) => i.id !== selectedId)];
+  }, [filtered, selectedId]);
 
   const panelHeading =
     mapMode === 'traffic'
@@ -345,11 +396,12 @@ export function BoardScreen({
 
         <Pressable
           onPress={() => onFab(selectedStop?.id)}
+          hitSlop={10}
           accessibilityRole="button"
           accessibilityLabel={fabLabel}
           style={({ pressed }) => [styles.cornerReportBtn, pressed && { opacity: 0.88 }]}
         >
-          <Ionicons name="add-circle-outline" size={17} color="#FFFFFF" />
+          <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
           <Text style={styles.cornerReportText}>{fabLabel}</Text>
         </Pressable>
 
@@ -357,14 +409,15 @@ export function BoardScreen({
           <View
             {...handlePan.panHandlers}
             style={styles.handleArea}
-            accessibilityRole="button"
             accessibilityLabel={panelOpen ? 'Zwiń listę' : 'Rozwiń listę'}
           >
             <View style={styles.handle} />
             <View style={styles.headRow}>
               <Text style={styles.headTitle}>{panelHeading}</Text>
               <View style={{ flex: 1 }} />
-              <Text style={styles.toggleText}>{panelOpen ? 'Mapa' : 'Lista'}</Text>
+              <Text style={styles.toggleText}>
+                {panelOpen ? 'Przesuń w dół' : 'Przesuń w górę'}
+              </Text>
               <Ionicons
                 name={panelOpen ? 'chevron-down' : 'chevron-up'}
                 size={18}
@@ -376,7 +429,7 @@ export function BoardScreen({
           {panelOpen ? (
             loading ? (
               <LoadingState />
-            ) : filtered.length === 0 ? (
+            ) : orderedFiltered.length === 0 ? (
               <EmptyState
                 icon="filter-outline"
                 title={emptyTitle}
@@ -386,7 +439,7 @@ export function BoardScreen({
               />
             ) : (
               <FlatList
-                data={filtered}
+                data={orderedFiltered}
                 keyExtractor={(i) => i.id}
                 contentContainerStyle={styles.list}
                 ItemSeparatorComponent={() => <View style={{ height: spacing.sm }} />}
@@ -402,28 +455,31 @@ export function BoardScreen({
               />
             )
           ) : selectedItem ? (
-            <View style={styles.preview}>
-              <Pressable onPress={() => setPanelOpen(true)} style={{ flex: 1 }}>
+            <View {...previewSwipePan.panHandlers} style={styles.preview}>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.previewTitle} numberOfLines={1}>
                   {selectedItem.title} · {selectedItem.lengthLabel}
                 </Text>
                 <Text style={styles.previewMeta} numberOfLines={1}>
                   {selectedItem.where} · {selectedItem.impact} ({selectedItem.status})
                 </Text>
-              </Pressable>
-              <Button label="Lista" small onPress={() => setPanelOpen(true)} />
+              </View>
+              <View style={styles.swipeHintPill}>
+                <Ionicons name="chevron-up" size={14} color={colors.inkSoft} />
+                <Text style={styles.swipeHintText}>Szczegóły</Text>
+              </View>
               <Pressable
                 onPress={() => setSelectedId(null)}
-                hitSlop={8}
+                hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel="Zamknij podgląd"
-                style={{ padding: 4 }}
+                style={{ padding: 6 }}
               >
                 <Ionicons name="close" size={18} color={colors.muted} />
               </Pressable>
             </View>
           ) : selectedStop ? (
-            <View style={styles.preview}>
+            <View {...previewSwipePan.panHandlers} style={styles.preview}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.previewTitle} numberOfLines={1}>
                   Przystanek: {selectedStop.name}
@@ -440,10 +496,10 @@ export function BoardScreen({
               />
               <Pressable
                 onPress={() => setSelectedId(null)}
-                hitSlop={8}
+                hitSlop={10}
                 accessibilityRole="button"
                 accessibilityLabel="Zamknij podgląd przystanku"
-                style={{ padding: 4 }}
+                style={{ padding: 6 }}
               >
                 <Ionicons name="close" size={18} color={colors.muted} />
               </Pressable>
@@ -553,13 +609,13 @@ const styles = StyleSheet.create({
     top: spacing.md,
     right: spacing.md,
     zIndex: 45,
-    height: 38,
-    paddingHorizontal: 14,
+    height: 44,
+    paddingHorizontal: 16,
     borderRadius: radius.pill,
     backgroundColor: colors.brick,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 7,
     ...shadow.float,
   },
   cornerReportText: {
@@ -573,30 +629,47 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: colors.surface,
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     borderTopWidth: 1,
     borderTopColor: colors.line,
     overflow: 'hidden',
     ...shadow.float,
   },
-  handleArea: { paddingTop: 8, paddingHorizontal: spacing.lg, paddingBottom: 8 },
-  handle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line },
+  handleArea: { paddingTop: 10, paddingHorizontal: spacing.lg, paddingBottom: 12 },
+  handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: colors.line },
   headRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
   headTitle: { ...font.bodyBold, color: colors.ink },
   toggleText: { ...font.small, color: colors.inkSoft },
-  list: { padding: spacing.lg, paddingTop: spacing.xs, paddingBottom: spacing.xl },
+  list: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, paddingBottom: 52 },
   preview: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginHorizontal: spacing.lg,
+    marginBottom: spacing.md,
     padding: spacing.sm,
     backgroundColor: colors.cream,
     borderRadius: radius.md,
   },
   previewTitle: { ...font.bodyBold, color: colors.ink },
   previewMeta: { ...font.small, color: colors.muted, marginTop: 2 },
+  swipeHintPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  swipeHintText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.inkSoft,
+  },
   card: {
     backgroundColor: colors.surface,
     borderRadius: radius.lg,

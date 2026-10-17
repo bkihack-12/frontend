@@ -73,13 +73,16 @@ interface AppDataValue {
     description: string;
   }) => Promise<CityEvent>;
   deleteEvent: (eventId: string) => void;
+  canDeleteEvent: (event: CityEvent) => boolean;
+  interestedIds: string[];
   isInterested: (eventId: string) => boolean;
+  isMyEvent: (eventId: string) => boolean;
   toggleInterested: (eventId: string) => boolean;
   interestedCount: (event: CityEvent) => number;
   placesLeft: (event: CityEvent) => number | undefined;
   getBooking: (eventId: string) => Booking | undefined;
-  bookEvent: (eventId: string, user: SessionUser) => Promise<BookResult>;
-  cancelBooking: (eventId: string, user: SessionUser) => Promise<void>;
+  bookEvent: (eventId: string, user?: SessionUser | null) => Promise<BookResult>;
+  cancelBooking: (eventId: string, user?: SessionUser | null) => Promise<void>;
   myBookings: Booking[];
   savedOffers: string[];
   toggleSavedOffer: (offerId: string) => boolean;
@@ -272,57 +275,91 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     [update],
   );
 
-  const interestedCount = useCallback(
-    (event: CityEvent) => event.interested + (data.interested.includes(event.id) ? 1 : 0),
-    [data.interested],
-  );
+  const myBookings = useMemo(() => {
+    const userList = user ? data.bookings[user.id] ?? [] : [];
+    const guestList = data.bookings.guest ?? [];
+    const merged: Booking[] = [...userList];
+    for (const gb of guestList) {
+      if (!merged.some((b) => b.eventId === gb.eventId)) {
+        merged.push(gb);
+      }
+    }
+    return merged;
+  }, [data.bookings, user]);
 
   const getBooking = useCallback(
-    (eventId: string) => (user ? data.bookings[user.id]?.find((b) => b.eventId === eventId) : undefined),
-    [data.bookings, user],
+    (eventId: string) => myBookings.find((b) => b.eventId === eventId),
+    [myBookings],
+  );
+
+  const isMyEvent = useCallback(
+    (eventId: string) => {
+      const hasBooking = myBookings.some((b) => b.eventId === eventId);
+      const ev = [...(data.userEvents ?? []), ...EVENTS].find((e) => e.id === eventId);
+      if (ev && !ev.isFree) {
+        return hasBooking;
+      }
+      return hasBooking || data.interested.includes(eventId);
+    },
+    [data.interested, data.userEvents, myBookings],
+  );
+
+  const interestedCount = useCallback(
+    (event: CityEvent) => event.interested + (isMyEvent(event.id) ? 1 : 0),
+    [isMyEvent],
   );
 
   const bookEvent = useCallback<AppDataValue['bookEvent']>(
     async (eventId, u) => {
-      await wait(450);
-      const event = EVENTS.find((e) => e.id === eventId);
-      if (!event || event.type !== 'limited' || event.capacity === undefined) {
-        return { ok: false, error: 'To wydarzenie nie wymaga zapisów.' };
+      await wait(350);
+      const uid = u?.id ?? user?.id ?? 'guest';
+      const allKnown = [...(dataRef.current.userEvents ?? []), ...EVENTS];
+      const event = allKnown.find((e) => e.id === eventId);
+      if (!event) {
+        return { ok: false, error: 'Nie znaleziono wydarzenia.' };
       }
-      const existing = dataRef.current.bookings[u.id]?.find((b) => b.eventId === eventId);
-      if (existing) return { ok: false, error: 'Masz już rezerwację na to wydarzenie.' };
-      const left = event.capacity - (event.taken ?? 0) - allBookingsFor(eventId);
-      if (left <= 0) return { ok: false, error: 'Brak wolnych miejsc.' };
+      const existing =
+        dataRef.current.bookings[uid]?.find((b) => b.eventId === eventId) ??
+        dataRef.current.bookings.guest?.find((b) => b.eventId === eventId);
+      if (existing) return { ok: false, error: 'Masz już bilet lub rezerwację na to wydarzenie.' };
+      if (event.type === 'limited' && event.capacity !== undefined) {
+        const left = event.capacity - (event.taken ?? 0) - allBookingsFor(eventId);
+        if (left <= 0) return { ok: false, error: 'Brak wolnych miejsc.' };
+      }
       const booking: Booking = { eventId, code: makeCode(), bookedAt: new Date().toISOString() };
       update((p) => ({
         ...p,
-        bookings: { ...p.bookings, [u.id]: [...(p.bookings[u.id] ?? []), booking] },
+        bookings: { ...p.bookings, [uid]: [...(p.bookings[uid] ?? []), booking] },
       }));
       pushNotification({
-        title: `Potwierdzono rezerwację: ${event.title}`,
+        title: event.isFree
+          ? `Potwierdzono rezerwację: ${event.title}`
+          : `Kupiono bilet: ${event.title}`,
         body: `Twój kod wejścia to ${booking.code}. Miejsce: ${event.venue}.`,
         kind: 'event',
       });
       return { ok: true, booking };
     },
-    [allBookingsFor, pushNotification, update],
+    [allBookingsFor, pushNotification, update, user],
   );
 
   const cancelBooking = useCallback<AppDataValue['cancelBooking']>(
-    async (eventId, u) => {
-      await wait(300);
-      update((p) => ({
-        ...p,
-        bookings: {
-          ...p.bookings,
-          [u.id]: (p.bookings[u.id] ?? []).filter((b) => b.eventId !== eventId),
-        },
-      }));
+    async (eventId) => {
+      await wait(250);
+      update((p) => {
+        const nextBookings: Record<string, Booking[]> = {};
+        for (const [k, list] of Object.entries(p.bookings ?? {})) {
+          nextBookings[k] = list.filter((b) => b.eventId !== eventId);
+        }
+        return {
+          ...p,
+          bookings: nextBookings,
+          interested: (p.interested ?? []).filter((id) => id !== eventId),
+        };
+      });
     },
     [update],
   );
-
-  const myBookings = useMemo(() => (user ? data.bookings[user.id] ?? [] : []), [data.bookings, user]);
 
   const toggleSavedOffer = useCallback(
     (id: string) => {
@@ -556,15 +593,31 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     return [...(data.userEvents ?? []), ...EVENTS].filter((e) => !deleted.has(e.id));
   }, [data.userEvents, data.deletedEventIds]);
 
+  const canDeleteEvent = useCallback(
+    (event: CityEvent) => {
+      if (!event.id.startsWith('ev-user-')) return false;
+      if (event.organizer && event.organizer !== 'Mieszkaniec Torunia') {
+        return user?.name === event.organizer;
+      }
+      return true;
+    },
+    [user],
+  );
+
   const deleteEvent = useCallback(
     (eventId: string) => {
       update((p) => {
         const deleted = p.deletedEventIds ?? [];
+        const nextBookings: Record<string, Booking[]> = {};
+        for (const [k, list] of Object.entries(p.bookings ?? {})) {
+          nextBookings[k] = list.filter((b) => b.eventId !== eventId);
+        }
         return {
           ...p,
           userEvents: (p.userEvents ?? []).filter((e) => e.id !== eventId),
           deletedEventIds: deleted.includes(eventId) ? deleted : [...deleted, eventId],
           interested: (p.interested ?? []).filter((id) => id !== eventId),
+          bookings: nextBookings,
         };
       });
     },
@@ -589,7 +642,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         lng,
         isFree,
         priceZl: isFree ? undefined : priceZl ?? 25,
-        type: 'open',
+        type: isFree ? 'open' : 'limited',
+        capacity: isFree ? undefined : 80,
+        taken: isFree ? undefined : 1,
+        action: isFree ? undefined : 'ticket',
         interested: 1,
         description: description.trim(),
         organizer: user?.name ?? 'Mieszkaniec Torunia',
@@ -618,7 +674,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     events: allEvents,
     addEvent,
     deleteEvent,
+    canDeleteEvent,
+    interestedIds: data.interested,
     isInterested,
+    isMyEvent,
     toggleInterested,
     interestedCount,
     placesLeft,

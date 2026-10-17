@@ -160,11 +160,11 @@ export const EVENTS: CityEvent[] = [
     priceZl: 55,
     type: 'limited',
     capacity: 420,
-    taken: 420,
+    taken: 398,
     action: 'ticket',
     interested: 264,
     description:
-      'Komedia o mieszkańcach jednej starówkowej kamienicy. Bilety wyprzedane — obserwuj wydarzenie, jeśli ktoś zrezygnuje.',
+      'Komedia o mieszkańcach jednej starówkowej kamienicy. Ostatnie wolne miejsca na widowni.',
     organizer: 'Teatr (przykład)',
   },
   {
@@ -198,7 +198,10 @@ export const EVENTS: CityEvent[] = [
     lng: 18.6492,
     isFree: false,
     priceZl: 22,
-    type: 'open',
+    type: 'limited',
+    capacity: 120,
+    taken: 48,
+    action: 'ticket',
     interested: 73,
     description:
       'Specjalne karmienia zwierząt, mini-wykład o jesiennych wędrówkach ptaków i konkurs dla dzieci.',
