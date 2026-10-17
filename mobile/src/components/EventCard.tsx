@@ -1,12 +1,11 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Badge, Button, Card } from './ui';
 import { CATEGORY_META } from '../data/events';
-import { formatDateTime, formatDistance, formatPrice, pluralPl } from '../lib/format';
+import { formatDateTime, formatPrice } from '../lib/format';
 import type { EventWithDistance } from '../lib/eventFilters';
 import { useAppData } from '../state/AppDataContext';
-import { colors, font, radius, spacing } from '../theme';
+import { colors, font, radius, shadow, spacing } from '../theme';
 
 export function PlacesBar({ left, capacity }: { left: number; capacity: number }) {
   const ratio = capacity > 0 ? left / capacity : 0;
@@ -32,10 +31,17 @@ export function actionLabel(e: { action?: 'register' | 'ticket'; priceZl?: numbe
     : 'Zapisz się';
 }
 
+/** Wylicza wyróżnioną etykietę zniżki / wstępu wyświetlaną na kafelku w gridzie. */
+export function eventDiscountTag(e: { isFree: boolean; priceZl?: number; category: string }): string {
+  if (e.isFree) return 'Wstęp 0 zł (100% taniej)';
+  if (e.category === 'kultura' || e.category === 'muzyka') return '−30% z PIT w Toruniu';
+  if (e.category === 'sport' || e.category === 'rodzina') return '−25% z PIT w Toruniu';
+  return '−20% z PIT w Toruniu';
+}
+
 export function EventCard({
   event,
   onOpen,
-  onShowOnMap,
   highlight,
 }: {
   event: EventWithDistance;
@@ -43,82 +49,108 @@ export function EventCard({
   onShowOnMap?: () => void;
   highlight?: boolean;
 }) {
-  const { interestedCount, isInterested, toggleInterested, placesLeft, getBooking } = useAppData();
+  const { isInterested, getBooking } = useAppData();
   const meta = CATEGORY_META[event.category];
-  const left = placesLeft(event);
   const booking = getBooking(event.id);
   const interested = isInterested(event.id);
+  const discountLabel = event.isFree ? '0 zł · Bezpłatne' : eventDiscountTag(event);
 
   return (
-    <Card
+    <Pressable
       onPress={onOpen}
       accessibilityLabel={event.title}
-      style={[styles.card, highlight && { borderColor: colors.brick }]}
+      style={({ pressed }) => [
+        styles.gridTile,
+        highlight && { borderColor: colors.brick, backgroundColor: '#FDFBFB' },
+        pressed && { opacity: 0.9 },
+      ]}
     >
       <View style={styles.topRow}>
-        <Badge label={meta.label} color={meta.color} bg="#F3F4F6" />
-        <Text style={styles.priceText}>
-          {event.isFree ? 'Bezpłatne' : formatPrice(event.priceZl ?? 0)}
-        </Text>
-      </View>
-
-      <Text style={styles.title}>{event.title}</Text>
-
-      <Text style={styles.metaLine} numberOfLines={1}>
-        {formatDateTime(event.startsAt)} · {event.venue} ({formatDistance(event.distanceKm)})
-      </Text>
-
-      <Text style={styles.desc} numberOfLines={2}>
-        {event.description}
-      </Text>
-
-      {left !== undefined && event.capacity ? (
-        <View style={{ marginTop: spacing.sm }}>
-          <PlacesBar left={left} capacity={event.capacity} />
-        </View>
-      ) : null}
-
-      <View style={styles.actions}>
-        <View style={styles.interestRow}>
-          <Ionicons name="people-outline" size={14} color={colors.muted} />
-          <Text style={styles.interestText}>
-            {interestedCount(event)} {pluralPl(interestedCount(event), 'chętny', 'chętnych', 'chętnych')}
+        <View style={[styles.discountPill, event.isFree && styles.discountPillFree]}>
+          <Text
+            style={[styles.discountPillText, event.isFree && styles.discountPillTextFree]}
+            numberOfLines={1}
+          >
+            {discountLabel}
           </Text>
         </View>
-        <View style={{ flex: 1 }} />
-        {onShowOnMap ? (
-          <Button label="Mapa" icon="location-outline" variant="ghost" small onPress={onShowOnMap} />
-        ) : null}
-        {event.type === 'open' ? (
-          <Button
-            label={interested ? 'Zainteresowany' : 'Interesuje mnie'}
-            icon={interested ? 'heart' : 'heart-outline'}
-            variant={interested ? 'primary' : 'secondary'}
-            small
-            onPress={() => toggleInterested(event.id)}
-          />
-        ) : booking ? (
-          <Button label="Zapisano" icon="checkmark" variant="river" small onPress={onOpen} />
-        ) : left === 0 ? (
-          <Button label="Brak miejsc" variant="secondary" small onPress={onOpen} />
-        ) : (
-          <Button label={actionLabel(event)} small onPress={onOpen} />
-        )}
+        <View style={[styles.catCircle, { backgroundColor: `${meta.color}18` }]}>
+          <Ionicons name={meta.icon as never} size={15} color={meta.color} />
+        </View>
       </View>
-    </Card>
+
+      <Text style={styles.title} numberOfLines={2}>
+        {event.title}
+      </Text>
+
+      <View style={styles.bottomRow}>
+        <Text style={styles.metaLine} numberOfLines={1}>
+          {meta.label} · {event.venue}
+        </Text>
+        <Text style={styles.dateLine} numberOfLines={1}>
+          {formatDateTime(event.startsAt)}
+          {booking ? ' · Zapisano ✓' : interested ? ' · Ulubione ♥' : ''}
+        </Text>
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: { padding: spacing.md },
-  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  priceText: { ...font.small, color: colors.inkSoft, fontWeight: '600' },
-  title: { ...font.h3, color: colors.ink, marginBottom: 4 },
-  metaLine: { ...font.small, color: colors.muted },
-  desc: { ...font.body, color: colors.inkSoft, marginTop: 6 },
-  actions: { flexDirection: 'row', alignItems: 'center', marginTop: spacing.sm, gap: 6 },
-  interestRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  interestText: { ...font.small, color: colors.muted },
+  gridTile: {
+    flexBasis: '47%',
+    flexGrow: 1,
+    minWidth: 145,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.line,
+    justifyContent: 'space-between',
+    gap: 8,
+    ...shadow.card,
+  },
+  topRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 6,
+  },
+  discountPill: {
+    backgroundColor: colors.brickSoft,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: radius.md,
+    flexShrink: 1,
+  },
+  discountPillFree: {
+    backgroundColor: colors.successSoft,
+  },
+  discountPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: colors.brickDark,
+  },
+  discountPillTextFree: {
+    color: colors.success,
+  },
+  catCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  title: {
+    ...font.bodyBold,
+    color: colors.ink,
+    lineHeight: 19,
+  },
+  bottomRow: {
+    gap: 2,
+  },
+  metaLine: { ...font.tiny, color: colors.inkSoft },
+  dateLine: { fontSize: 11, color: colors.muted },
   placesRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   placesText: { fontSize: 12, fontWeight: '600' },
   bar: { height: 5, borderRadius: radius.pill, backgroundColor: colors.line, overflow: 'hidden' },

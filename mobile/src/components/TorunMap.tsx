@@ -19,7 +19,7 @@ import {
 } from 'react-native';
 import Svg, { Circle, Defs, Path, Polyline, RadialGradient, Stop } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import type { CityEvent, MapPoint } from '../types';
+import type { CityEvent, MapPoint, TransitStop } from '../types';
 import { CATEGORY_META } from '../data/events';
 import { DEMO_USER_LOCATION, LatLng, TORUN_CENTER, metersPerPixel, project, unproject } from '../lib/geo';
 import { colors, font, radius, shadow, spacing, TOUCH } from '../theme';
@@ -113,20 +113,24 @@ interface View_ {
   zoom: number;
 }
 
-const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+const clamp = (v: number, a: number, b: number) =>
+  Number.isFinite(v) ? Math.min(b, Math.max(a, v)) : (a + b) / 2;
+
+const DEFAULT_PROJECTED = project(TORUN_CENTER, 0);
 
 function clampView(v: View_): View_ {
   const tl = project({ lat: BOUNDS.maxLat, lng: BOUNDS.minLng }, 0);
   const br = project({ lat: BOUNDS.minLat, lng: BOUNDS.maxLng }, 0);
-  return {
-    zoom: clamp(v.zoom, MIN_ZOOM, MAX_ZOOM),
-    cx: clamp(v.cx, tl.x, br.x),
-    cy: clamp(v.cy, tl.y, br.y),
-  };
+  const zoom = Number.isFinite(v.zoom) ? clamp(v.zoom, MIN_ZOOM, MAX_ZOOM) : DEFAULT_ZOOM;
+  const cx = Number.isFinite(v.cx) ? clamp(v.cx, tl.x, br.x) : DEFAULT_PROJECTED.x;
+  const cy = Number.isFinite(v.cy) ? clamp(v.cy, tl.y, br.y) : DEFAULT_PROJECTED.y;
+  return { zoom, cx, cy };
 }
 
 function viewFor(center: LatLng, zoom: number): View_ {
-  const p = project(center, 0);
+  const safeCenter =
+    Number.isFinite(center?.lat) && Number.isFinite(center?.lng) ? center : TORUN_CENTER;
+  const p = project(safeCenter, 0);
   return clampView({ cx: p.x, cy: p.y, zoom });
 }
 
@@ -139,6 +143,7 @@ interface Props {
   events?: CityEvent[];
   markers?: MapMarkerItem[];
   polylines?: MapPolylineItem[];
+  stops?: TransitStop[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   interestedCount?: (e: CityEvent) => number;
@@ -160,6 +165,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     events = [],
     markers = [],
     polylines = [],
+    stops = [],
     selectedId,
     onSelect,
     interestedCount = (e) => e.interested,
@@ -231,35 +237,55 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     const z2 = clamp(v.zoom + dZoom, MIN_ZOOM, MAX_ZOOM);
     const s1 = Math.pow(2, v.zoom);
     const s2 = Math.pow(2, z2);
-    const wx = v.cx + fx / s1;
-    const wy = v.cy + fy / s1;
-    return { cx: wx - fx / s2, cy: wy - fy / s2, zoom: z2 };
+    const safeFx = Number.isFinite(fx) ? fx : 0;
+    const safeFy = Number.isFinite(fy) ? fy : 0;
+    const wx = v.cx + safeFx / s1;
+    const wy = v.cy + safeFy / s1;
+    return { cx: wx - safeFx / s2, cy: wy - safeFy / s2, zoom: z2 };
   }, []);
 
-  const gesture = useRef({ touches: 0, midX: 0, midY: 0, dist: 0 });
+  const gesture = useRef({ touches: 0, midX: 0, midY: 0, dist: 0, prevDx: 0, prevDy: 0 });
 
   const readTouches = (e: GestureResponderEvent) => {
-    const t = e.nativeEvent.touches;
+    const ne = e.nativeEvent as unknown as {
+      touches?: { pageX?: number; pageY?: number; clientX?: number; clientY?: number }[];
+      pageX?: number;
+      pageY?: number;
+      clientX?: number;
+      clientY?: number;
+      locationX?: number;
+      locationY?: number;
+    };
+    const t = ne.touches;
+    const getX = (obj?: { pageX?: number; clientX?: number }) =>
+      obj?.pageX ?? obj?.clientX ?? ne.pageX ?? ne.clientX ?? ne.locationX ?? 0;
+    const getY = (obj?: { pageY?: number; clientY?: number }) =>
+      obj?.pageY ?? obj?.clientY ?? ne.pageY ?? ne.clientY ?? ne.locationY ?? 0;
+
     if (!t || t.length === 0) {
-      return { n: 1, mx: e.nativeEvent.pageX, my: e.nativeEvent.pageY, dist: 0 };
+      return { n: 1, mx: getX(), my: getY(), dist: 0 };
     }
     if (t.length >= 2) {
-      const a = t[0];
-      const b = t[1];
+      const ax = getX(t[0]);
+      const ay = getY(t[0]);
+      const bx = getX(t[1]);
+      const by = getY(t[1]);
       return {
         n: 2,
-        mx: (a.pageX + b.pageX) / 2,
-        my: (a.pageY + b.pageY) / 2,
-        dist: Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY),
+        mx: (ax + bx) / 2,
+        my: (ay + by) / 2,
+        dist: Math.hypot(ax - bx, ay - by),
       };
     }
-    return { n: 1, mx: t[0].pageX, my: t[0].pageY, dist: 0 };
+    return { n: 1, mx: getX(t[0]), my: getY(t[0]), dist: 0 };
   };
 
   const containerOffset = useRef({ x: 0, y: 0 });
   const measure = useCallback(() => {
     containerRef.current?.measureInWindow?.((x: number, y: number) => {
-      containerOffset.current = { x, y };
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        containerOffset.current = { x, y };
+      }
     });
   }, []);
 
@@ -271,16 +297,30 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         onMoveShouldSetPanResponderCapture: (_e, gs) =>
           Math.abs(gs.dx) > 5 || Math.abs(gs.dy) > 5,
         onPanResponderTerminationRequest: () => false,
-        onPanResponderGrant: (e) => {
+        onPanResponderGrant: (e, gs) => {
           cancelAnim();
           const r = readTouches(e);
-          gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+          gesture.current = {
+            touches: r.n,
+            midX: r.mx,
+            midY: r.my,
+            dist: r.dist,
+            prevDx: gs.dx,
+            prevDy: gs.dy,
+          };
         },
-        onPanResponderMove: (e) => {
+        onPanResponderMove: (e, gs) => {
           const r = readTouches(e);
           const g = gesture.current;
           if (r.n !== g.touches) {
-            gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+            gesture.current = {
+              touches: r.n,
+              midX: r.mx,
+              midY: r.my,
+              dist: r.dist,
+              prevDx: gs.dx,
+              prevDy: gs.dy,
+            };
             return;
           }
           let v = viewRef.current;
@@ -289,10 +329,22 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
             const fx = r.mx - (containerOffset.current.x + w / 2);
             const fy = r.my - (containerOffset.current.y + h / 2);
             v = { ...v, ...zoomAround(Math.log2(r.dist / g.dist), fx, fy, v) };
+            const s = Math.pow(2, v.zoom);
+            apply({ ...v, cx: v.cx - (r.mx - g.midX) / s, cy: v.cy - (r.my - g.midY) / s });
+          } else {
+            const ddx = gs.dx - g.prevDx;
+            const ddy = gs.dy - g.prevDy;
+            const s = Math.pow(2, v.zoom);
+            apply({ ...v, cx: v.cx - ddx / s, cy: v.cy - ddy / s });
           }
-          const s = Math.pow(2, v.zoom);
-          apply({ ...v, cx: v.cx - (r.mx - g.midX) / s, cy: v.cy - (r.my - g.midY) / s });
-          gesture.current = { touches: r.n, midX: r.mx, midY: r.my, dist: r.dist };
+          gesture.current = {
+            touches: r.n,
+            midX: r.mx,
+            midY: r.my,
+            dist: r.dist,
+            prevDx: gs.dx,
+            prevDy: gs.dy,
+          };
         },
       }),
     [apply, cancelAnim, zoomAround],
@@ -317,11 +369,16 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
   const scale = Math.pow(2, view.zoom);
   const toScreen = useCallback(
     (p: LatLng) => {
+      if (!p || !Number.isFinite(p.lat) || !Number.isFinite(p.lng)) {
+        return { x: -9999, y: -9999 };
+      }
       const w = project(p, 0);
-      return {
-        x: size.w / 2 + (w.x - view.cx) * scale,
-        y: size.h / 2 + (w.y - view.cy) * scale,
-      };
+      const x = size.w / 2 + (w.x - view.cx) * scale;
+      const y = size.h / 2 + (w.y - view.cy) * scale;
+      if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        return { x: -9999, y: -9999 };
+      }
+      return { x, y };
     },
     [size.w, size.h, view.cx, view.cy, scale],
   );
@@ -387,40 +444,52 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
     return { clusters: multi, singles: ones };
   }, [events, toScreen, size.w, size.h, selectedId, interestedCount]);
 
-  /* ----- Heat layer ----- */
+  /* ----- Heat layer (vibrant thermal gradient with deep red peak) ----- */
   const heat = useMemo(() => {
     if (!showHeat || !size.w || events.length === 0) return [];
-    return events.map((ev) => {
-      const n = interestedCount(ev);
-      const pt = toScreen(ev);
-      const meters = 200 + n * 0.95;
-      const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 30, 180);
-      return { id: ev.id, x: pt.x, y: pt.y, r, o: clamp(0.22 + n / 750, 0.24, 0.65) };
-    });
+    return events
+      .map((ev) => {
+        const n = interestedCount(ev);
+        const pt = toScreen(ev);
+        const meters = 260 + n * 1.25;
+        const r = clamp(meters / metersPerPixel(ev.lat, view.zoom), 42, 215);
+        const intensity = clamp(n / 320, 0.25, 1);
+        const o = clamp(0.58 + intensity * 0.38, 0.62, 0.96);
+        return { id: ev.id, x: pt.x, y: pt.y, r, o, hot: n >= 140 };
+      })
+      .filter((h) => Number.isFinite(h.x) && Number.isFinite(h.y) && Number.isFinite(h.r));
   }, [events, showHeat, toScreen, size.w, view.zoom, interestedCount]);
 
   /* ----- Screen-projected polylines (traffic jams / transit routes) ----- */
   const screenPolylines = useMemo(() => {
     if (!size.w || polylines.length === 0) return [];
-    return polylines.map((pl) => {
-      const pts = pl.path.map(toScreen);
-      const pointsAttr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
-      const midIdx = Math.floor(pts.length / 2);
-      const mid =
-        pts.length >= 2 && pts.length % 2 === 0
-          ? {
-              x: (pts[midIdx - 1].x + pts[midIdx].x) / 2,
-              y: (pts[midIdx - 1].y + pts[midIdx].y) / 2,
-            }
-          : pts[midIdx] ?? { x: 0, y: 0 };
-      return {
-        ...pl,
-        pts,
-        pointsAttr,
-        mid,
-        selected: pl.id === selectedId,
-      };
-    });
+    return polylines
+      .map((pl) => {
+        const validPath = (pl.path ?? []).filter(
+          (p) => p && Number.isFinite(p.lat) && Number.isFinite(p.lng),
+        );
+        const pts = validPath
+          .map(toScreen)
+          .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x > -5000 && p.y > -5000);
+        if (pts.length < 2) return null;
+        const pointsAttr = pts.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+        const midIdx = Math.floor(pts.length / 2);
+        const mid =
+          pts.length >= 2 && pts.length % 2 === 0
+            ? {
+                x: (pts[midIdx - 1].x + pts[midIdx].x) / 2,
+                y: (pts[midIdx - 1].y + pts[midIdx].y) / 2,
+              }
+            : pts[midIdx] ?? { x: 0, y: 0 };
+        return {
+          ...pl,
+          pts,
+          pointsAttr,
+          mid,
+          selected: pl.id === selectedId,
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
   }, [polylines, size.w, toScreen, selectedId]);
 
   /* ----- Vector basemap paths (always rendered beneath / when tiles not loaded) ----- */
@@ -519,18 +588,36 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
           <Svg width={size.w} height={size.h}>
             <Defs>
               <RadialGradient id="heat" cx="50%" cy="50%" rx="50%" ry="50%">
-                <Stop offset="0" stopColor="#D96B52" stopOpacity="0.65" />
-                <Stop offset="0.45" stopColor="#E99B58" stopOpacity="0.35" />
-                <Stop offset="1" stopColor="#F4C77B" stopOpacity="0" />
+                <Stop offset="0%" stopColor="#dc000086" stopOpacity="0.95" />
+                <Stop offset="28%" stopColor="#ff2f00a7" stopOpacity="0.82" />
+                <Stop offset="58%" stopColor="#ff7b009a" stopOpacity="0.55" />
+                <Stop offset="82%" stopColor="#ffd000a1" stopOpacity="0.28" />
+                <Stop offset="100%" stopColor="#ffe6006f" stopOpacity="0" />
+              </RadialGradient>
+              <RadialGradient id="heatCore" cx="50%" cy="50%" rx="50%" ry="50%">
+                <Stop offset="0%" stopColor="#b900007a" stopOpacity="0.95" />
+                <Stop offset="55%" stopColor="#ff11007a" stopOpacity="0.65" />
+                <Stop offset="100%" stopColor="#FF4500" stopOpacity="0" />
               </RadialGradient>
             </Defs>
             {showHeat
               ? heat.map((h) => (
-                  <Circle key={h.id} cx={h.x} cy={h.y} r={h.r} fill="url(#heat)" opacity={h.o} />
+                  <React.Fragment key={h.id}>
+                    <Circle cx={h.x} cy={h.y} r={h.r} fill="url(#heat)" opacity={h.o} />
+                    {h.hot ? (
+                      <Circle
+                        cx={h.x}
+                        cy={h.y}
+                        r={h.r * 0.52}
+                        fill="url(#heatCore)"
+                        opacity={0.9}
+                      />
+                    ) : null}
+                  </React.Fragment>
                 ))
               : null}
             {screenPolylines.map((pl) => {
-              const strokeW = pl.faint ? 4 : pl.selected ? 9 : 6;
+              const strokeW = pl.faint ? 4.5 : pl.selected ? 10 : 7.5;
               return (
                 <React.Fragment key={pl.id}>
                   {/* Obrys (casing) dla czytelności */}
@@ -539,10 +626,10 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                       points={pl.pointsAttr}
                       fill="none"
                       stroke="#FFFFFF"
-                      strokeWidth={strokeW + 4}
+                      strokeWidth={strokeW + 5}
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      opacity={0.95}
+                      opacity={0.98}
                     />
                   ) : null}
                   <Polyline
@@ -550,29 +637,29 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
                     fill="none"
                     stroke={pl.color}
                     strokeWidth={strokeW}
-                    strokeDasharray={pl.dashed ? '8, 6' : undefined}
+                    strokeDasharray={pl.dashed ? '9, 6' : undefined}
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    opacity={pl.faint ? 0.42 : 0.95}
+                    opacity={pl.faint ? 0.65 : 0.98}
                   />
-                  {/* Punkty końcowe odcinka */}
+                  {/* Punkty końcowe zweryfikowanego odcinka utrudnienia */}
                   {!pl.faint && pl.pts.length >= 2 ? (
                     <>
                       <Circle
                         cx={pl.pts[0].x}
                         cy={pl.pts[0].y}
-                        r={4.5}
+                        r={5}
                         fill="#FFFFFF"
                         stroke={pl.color}
-                        strokeWidth={2.5}
+                        strokeWidth={2.8}
                       />
                       <Circle
                         cx={pl.pts[pl.pts.length - 1].x}
                         cy={pl.pts[pl.pts.length - 1].y}
-                        r={4.5}
+                        r={5}
                         fill="#FFFFFF"
                         stroke={pl.color}
-                        strokeWidth={2.5}
+                        strokeWidth={2.8}
                       />
                     </>
                   ) : null}
@@ -583,7 +670,7 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         </View>
       ) : null}
 
-      {/* Etykiety długości zapchanych ulic / odcinków linii na mapie */}
+      {/* Etykiety długości zapchanych ulic / zweryfikowanych odcinków utrudnień na mapie */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {screenPolylines.map((pl) => {
           if (!pl.label || pl.faint) return null;
@@ -594,8 +681,8 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
               style={[
                 styles.segmentLabel,
                 {
-                  left: pl.mid.x - 42,
-                  top: pl.mid.y - 26,
+                  left: pl.mid.x - 48,
+                  top: pl.mid.y - 28,
                   borderColor: pl.color,
                   backgroundColor: pl.selected ? pl.color : '#FFFFFF',
                 },
@@ -621,8 +708,44 @@ export const TorunMap = forwardRef<TorunMapHandle, Props>(function TorunMap(
         <View style={styles.userDot} />
       </View>
 
-      {/* Znaczniki wydarzeń (Społeczność) oraz punktów (Ruch / Transport) */}
+      {/* Przystanki komunikacji miejskiej, znaczniki wydarzeń oraz zgłoszeń */}
       <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        {stops.map((s) => {
+          const pt = toScreen(s);
+          if (pt.x < -60 || pt.y < -60 || pt.x > size.w + 60 || pt.y > size.h + 60) return null;
+          const selected = s.id === selectedId;
+          return (
+            <Pressable
+              key={s.id}
+              onPress={() => onSelect(selected ? null : s.id)}
+              style={[
+                styles.stopHit,
+                { left: pt.x - 14, top: pt.y - 14, zIndex: selected ? 55 : 3 },
+              ]}
+            >
+              {selected ? (
+                <View style={styles.markerLabel}>
+                  <Text style={styles.markerLabelText} numberOfLines={1}>
+                    {s.name} ({s.lines.join(', ')})
+                  </Text>
+                </View>
+              ) : null}
+              <View
+                style={[
+                  styles.stopPin,
+                  selected && {
+                    backgroundColor: colors.river,
+                    borderColor: colors.ink,
+                    transform: [{ scale: 1.22 }],
+                  },
+                ]}
+              >
+                <Ionicons name="bus" size={11} color={selected ? '#FFFFFF' : colors.river} />
+              </View>
+            </Pressable>
+          );
+        })}
+
         {clusters.map((c) => (
           <Pressable
             key={`cl-${c.key}`}
@@ -800,11 +923,29 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
+  stopHit: {
+    position: 'absolute',
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopPin: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: colors.river,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...shadow.card,
+  },
   markerHit: { position: 'absolute', width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   markerLabel: {
     position: 'absolute',
     top: -26,
-    maxWidth: 180,
+    maxWidth: 200,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,

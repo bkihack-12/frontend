@@ -16,6 +16,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="spolecznosc" options={{ title: 'Społeczność' }} />
       <Tabs.Screen name="miasto" options={{ title: 'Miasto' }} />
       <Tabs.Screen name="transport" options={{ title: 'Transport' }} />
+      <Tabs.Screen name="glos" options={{ title: 'Głos Mieszkańca' }} />
     </Tabs>
   );
 }

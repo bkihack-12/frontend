@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Badge, Button, InlineNotice, MetaRow, Sheet } from './ui';
-import { PlacesBar, actionLabel } from './EventCard';
+import { PlacesBar, actionLabel, eventDiscountTag } from './EventCard';
 import { CATEGORY_META } from '../data/events';
 import {
   formatDateTime,
@@ -24,9 +24,18 @@ interface Props {
   onClose: () => void;
   onShowOnMap?: (e: EventWithDistance) => void;
   onNeedAuth: (mode: 'login' | 'register', event: EventWithDistance) => void;
+  taxVerified?: boolean;
+  onOpenTaxForm?: () => void;
 }
 
-export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Props) {
+export function EventDetailSheet({
+  event,
+  onClose,
+  onShowOnMap,
+  onNeedAuth,
+  taxVerified,
+  onOpenTaxForm,
+}: Props) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const { placesLeft, getBooking, bookEvent, cancelBooking, interestedCount, isInterested, toggleInterested } =
@@ -47,6 +56,7 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
   const interested = isInterested(event.id);
   const count = interestedCount(event);
   const isTicket = event.action === 'ticket';
+  const discountLabel = eventDiscountTag(event);
 
   const doBook = async () => {
     if (!user) return;
@@ -152,9 +162,12 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
   return (
     <Sheet visible onClose={onClose} title={event.title} footer={footer}>
       <View style={styles.badges}>
+        <View style={styles.discountHero}>
+          <Text style={styles.discountHeroText}>{discountLabel}</Text>
+        </View>
         <Badge label={meta.label} color={meta.color} bg="#F3F4F6" />
         <Badge
-          label={event.isFree ? 'Bezpłatne' : formatPrice(event.priceZl ?? 0)}
+          label={event.isFree ? 'Bezpłatne' : `Cena regularna: ${formatPrice(event.priceZl ?? 0)}`}
           color={event.isFree ? colors.success : colors.inkSoft}
           bg={event.isFree ? colors.successSoft : '#F3F4F6'}
         />
@@ -180,7 +193,25 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
           icon="people-outline"
           text={`${count} ${pluralPl(count, 'osoba zainteresowana', 'osoby zainteresowane', 'osób zainteresowanych')}`}
         />
+        <MetaRow
+          icon="receipt-outline"
+          text="Prawo do zniżek mają wyłącznie osoby rozliczające podatki (PIT) w Toruniu."
+        />
       </View>
+
+      {!taxVerified && onOpenTaxForm ? (
+        <Button
+          label="Potwierdź płacenie podatków w Toruniu"
+          icon="document-text-outline"
+          variant="secondary"
+          small
+          onPress={() => {
+            onClose();
+            setTimeout(onOpenTaxForm, 220);
+          }}
+          style={{ marginTop: spacing.sm, alignSelf: 'flex-start' }}
+        />
+      ) : null}
 
       {left !== undefined && event.capacity ? (
         <View style={styles.places}>
@@ -205,7 +236,18 @@ export function EventDetailSheet({ event, onClose, onShowOnMap, onNeedAuth }: Pr
 }
 
 const styles = StyleSheet.create({
-  badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: spacing.md },
+  badges: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginBottom: spacing.md },
+  discountHero: {
+    backgroundColor: colors.brickSoft,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+  },
+  discountHeroText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: colors.brickDark,
+  },
   bookedBanner: {
     flexDirection: 'row',
     gap: 8,

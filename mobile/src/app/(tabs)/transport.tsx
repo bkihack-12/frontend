@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { Ionicons } from '@expo/vector-icons';
 import { BoardItem, BoardScreen } from '../../components/BoardScreen';
 import { ReportSheet } from '../../components/ReportSheet';
-import { TRANSIT_LINES, TRANSIT_REFERENCE_ROUTES } from '../../data/notices';
+import { TRANSIT_LINES, TRANSIT_REFERENCE_ROUTES, TRANSIT_STOPS } from '../../data/notices';
 import { useAppData } from '../../state/AppDataContext';
 import { useToast } from '../../state/ToastContext';
 import type { NoticeType } from '../../types';
@@ -11,27 +11,28 @@ const TYPES: Record<
   NoticeType,
   { label: string; icon: React.ComponentProps<typeof Ionicons>['name']; color: string }
 > = {
-  delay: { label: 'Opóźnienia', icon: 'time-outline', color: '#C4842D' },
-  interruption: { label: 'Przerwy', icon: 'alert-circle-outline', color: '#C94A4A' },
-  reroute: { label: 'Objazdy', icon: 'git-branch-outline', color: '#3B6990' },
-  other: { label: 'Inne', icon: 'information-circle-outline', color: '#6B7280' },
+  delay: { label: 'Opóźnienia', icon: 'time-outline', color: '#D97706' },
+  interruption: { label: 'Przerwy', icon: 'alert-circle-outline', color: '#DC2626' },
+  reroute: { label: 'Objazdy', icon: 'git-branch-outline', color: '#2563EB' },
+  other: { label: 'Inne', icon: 'information-circle-outline', color: '#4B5563' },
 };
 
 const TRANSIT_LINE_COLORS: Record<string, string> = {
-  '1': '#D9485F',
+  '1': '#3B6990',
   '2': '#2563EB',
   '4': '#0F766E',
   '11': '#7C3AED',
-  '14': '#EA580C',
+  '14': '#0284C7',
   '22': '#0891B2',
-  '25': '#65A30D',
-  '27': '#C2410C',
+  '25': '#4F46E5',
+  '27': '#0D9488',
 };
 
 export default function TransportScreen() {
   const { notices, addNotice } = useAppData();
   const { showToast } = useToast();
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportStopId, setReportStopId] = useState<string | null>(null);
 
   const items = useMemo<BoardItem[]>(
     () =>
@@ -43,6 +44,7 @@ export default function TransportScreen() {
         color: TYPES[n.type].color,
         title: n.stop,
         where: n.location,
+        stopId: n.stopId,
         lines: n.lines,
         reportedAt: n.reportedAt,
         severity: n.severity,
@@ -53,9 +55,9 @@ export default function TransportScreen() {
         author: n.author,
         lat: n.lat,
         lng: n.lng,
-        // Komunikat może dotyczyć tylko fragmentu linii; bez geokodowania przystanków
-        // nie rysujemy zgadywanego odcinka. Pełne przebiegi pochodzą z GTFS poniżej.
-        path: [],
+        // Zweryfikowane komunikaty (sample) zaznaczają odcinek na linii komunikacji;
+        // zgłoszenia pasażerów dotyczą konkretnego przystanku.
+        path: n.source === 'sample' ? n.path : [],
         lengthLabel: n.lengthLabel,
       })),
     [notices],
@@ -68,9 +70,8 @@ export default function TransportScreen() {
         path: r.path,
         color: TRANSIT_LINE_COLORS[r.line] ?? r.color,
         label: `Linia ${r.line} (${r.lengthLabel})`,
-        // Trasy GTFS są zweryfikowanym przebiegiem linii, więc muszą być
-        // widoczne ponad podkładem OSM, a nie traktowane jak tło.
-        faint: false,
+        // Pełny przebieg linii jako czytelna trasa bazowa pod zweryfikowanymi odcinkami utrudnień
+        faint: true,
       })),
     [],
   );
@@ -81,39 +82,44 @@ export default function TransportScreen() {
     <>
       <BoardScreen
         title="Transport"
-        subtitle="Linie i utrudnienia MZK"
+        subtitle="Przystanki, linie i utrudnienia MZK"
         items={items}
         typeFilters={[
           { key: 'all', label: 'Wszystkie' },
           ...typeKeys.map((k) => ({ key: k, label: TYPES[k].label, icon: TYPES[k].icon })),
         ]}
         lineFilters={TRANSIT_LINES}
+        stops={TRANSIT_STOPS}
         extraPolylines={extraPolylines}
-        showItemPaths={false}
+        showItemPaths
         mapMode="transit"
-        fabLabel="Zgłoś problem"
-        onFab={() => setReportOpen(true)}
+        fabLabel="Zgłoś na przystanku"
+        onFab={(stopId) => {
+          setReportStopId(stopId ?? null);
+          setReportOpen(true);
+        }}
         emptyTitle="Brak komunikatów"
         emptyMessage="Brak utrudnień dla wybranych filtrów."
       />
       <ReportSheet
         visible={reportOpen}
         onClose={() => setReportOpen(false)}
-        title="Zgłoś problem MZK"
+        title="Zgłoś utrudnienie na przystanku"
+        intro="Wybierz przystanek MZK, którego dotyczy utrudnienie."
         typeOptions={typeKeys.map((k) => ({ value: k, label: TYPES[k].label, icon: TYPES[k].icon }))}
-        lineOptions={TRANSIT_LINES}
-        locationLabel="Przystanek lub odcinek"
-        locationPlaceholder="np. Plac Rapackiego, ul. Gagarina"
+        stopOptions={TRANSIT_STOPS}
+        initialStopId={reportStopId}
         submitLabel="Dodaj zgłoszenie"
         onSubmit={async (v) => {
           await addNotice({
             type: v.type as NoticeType,
             lines: v.lines,
+            stopId: v.stopId,
             stop: v.location,
             description: v.description,
           });
           setReportOpen(false);
-          showToast('Zgłoszenie dodane na mapę');
+          showToast('Zgłoszenie dodane dla przystanku');
         }}
       />
     </>

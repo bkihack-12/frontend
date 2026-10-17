@@ -7,7 +7,7 @@ import { colors, radius } from '../theme';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
-export const TAB_ORDER = ['ruch', 'spolecznosc', 'miasto', 'transport'] as const;
+export const TAB_ORDER = ['ruch', 'spolecznosc', 'miasto', 'transport', 'glos'] as const;
 export type TabKey = (typeof TAB_ORDER)[number];
 
 export const TAB_META: Record<TabKey, { label: string; icon: IconName; iconActive: IconName; href: `/${TabKey}` }> = {
@@ -15,6 +15,7 @@ export const TAB_META: Record<TabKey, { label: string; icon: IconName; iconActiv
   spolecznosc: { label: 'Społeczność', icon: 'compass-outline', iconActive: 'compass', href: '/spolecznosc' },
   miasto: { label: 'Miasto', icon: 'sparkles-outline', iconActive: 'sparkles', href: '/miasto' },
   transport: { label: 'Transport', icon: 'bus-outline', iconActive: 'bus', href: '/transport' },
+  glos: { label: 'Głos', icon: 'chatbubbles-outline', iconActive: 'chatbubbles', href: '/glos' },
 };
 
 export function TabBar(_props?: unknown) {

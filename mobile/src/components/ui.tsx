@@ -158,7 +158,6 @@ export function Card({
     return (
       <Pressable
         onPress={onPress}
-        accessibilityRole="button"
         accessibilityLabel={accessibilityLabel}
         style={({ pressed }) => [styles.card, pressed && { opacity: 0.94 }, style]}
       >
@@ -367,6 +366,47 @@ export function MetaRow({ icon, text, color }: { icon: IconName; text: string; c
   );
 }
 
+export function CornerFilterButton({
+  label = 'Filtry',
+  count,
+  active,
+  onPress,
+  style,
+}: {
+  label?: string;
+  count?: number;
+  active?: boolean;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const isActive = active || (count !== undefined && count > 0);
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={count ? `${label} (${count})` : label}
+      style={({ pressed }) => [
+        styles.cornerFilterBtn,
+        isActive && styles.cornerFilterBtnActive,
+        pressed && { opacity: 0.88 },
+        style,
+      ]}
+    >
+      <Ionicons
+        name="options-outline"
+        size={17}
+        color={isActive ? '#FFFFFF' : colors.ink}
+      />
+      <Text style={[styles.cornerFilterText, isActive && { color: '#FFFFFF' }]}>{label}</Text>
+      {count !== undefined && count > 0 ? (
+        <View style={[styles.cornerFilterBadge, isActive && { backgroundColor: 'rgba(255,255,255,0.24)' }]}>
+          <Text style={[styles.cornerFilterBadgeText, isActive && { color: '#FFFFFF' }]}>{count}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   btn: {
     minHeight: TOUCH,
@@ -488,4 +528,43 @@ const styles = StyleSheet.create({
   sheetFooter: { paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.line },
   metaRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
   metaText: { ...font.small, color: colors.inkSoft, flex: 1 },
+  cornerFilterBtn: {
+    position: 'absolute',
+    top: spacing.md,
+    left: spacing.md,
+    zIndex: 45,
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: radius.pill,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1,
+    borderColor: colors.line,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    ...shadow.float,
+  },
+  cornerFilterBtnActive: {
+    backgroundColor: colors.brick,
+    borderColor: colors.brick,
+  },
+  cornerFilterText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
+  },
+  cornerFilterBadge: {
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    backgroundColor: colors.brickSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cornerFilterBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.brickDark,
+  },
 });

@@ -5,7 +5,8 @@ import { TorunMap, TorunMapHandle } from '../../components/TorunMap';
 import { NearbyPanel, PEEK_EMPTY, PEEK_SELECTED } from '../../components/NearbyPanel';
 import { EventDetailSheet } from '../../components/EventDetailSheet';
 import { EventFiltersSheet } from '../../components/EventFiltersSheet';
-import { Chip, ChipRow } from '../../components/ui';
+import { OfferDetailSheet, TaxpayerDeclaration, TaxpayerFormSheet } from '../../components/OfferParts';
+import { CornerFilterButton } from '../../components/ui';
 import {
   DEFAULT_FILTERS,
   EventFilters,
@@ -15,23 +16,28 @@ import {
 } from '../../lib/eventFilters';
 import { useAppData } from '../../state/AppDataContext';
 import { useAuth } from '../../state/AuthContext';
-import { colors, spacing } from '../../theme';
+import { useToast } from '../../state/ToastContext';
+import { colors } from '../../theme';
+import type { CityOffer } from '../../types';
 
 export default function SpolecznoscScreen() {
   const { events, interestedCount } = useAppData();
   const { user, sheet, openAuth } = useAuth();
+  const { showToast } = useToast();
 
   const [filters, setFilters] = useState<EventFilters>(DEFAULT_FILTERS);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [openOffer, setOpenOffer] = useState<CityOffer | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [showHeat, setShowHeat] = useState(true);
   const [mapHeight, setMapHeight] = useState(500);
   const [loading, setLoading] = useState(true);
+  const [taxFormOpen, setTaxFormOpen] = useState(false);
+  const [taxDecl, setTaxDecl] = useState<TaxpayerDeclaration | null>(null);
   const mapRef = useRef<TorunMapHandle>(null);
 
-  // Simulated initial loading state (data is local).
   useEffect(() => {
     const t = setTimeout(() => setLoading(false), 700);
     return () => clearTimeout(t);
@@ -43,7 +49,6 @@ export default function SpolecznoscScreen() {
   const detail = useMemo(() => all.find((e) => e.id === detailId) ?? null, [all, detailId]);
   const nFilters = activeFilterCount(filters);
 
-  // Deselect markers that were filtered out.
   useEffect(() => {
     if (selectedId && !filtered.some((e) => e.id === selectedId)) setSelectedId(null);
   }, [filtered, selectedId]);
@@ -87,43 +92,12 @@ export default function SpolecznoscScreen() {
     mapRef.current?.focusOn({ lat: e.lat, lng: e.lng }, 16);
   }, []);
 
-  const toggleQuickDate = (d: EventFilters['date']) =>
-    setFilters((f) => ({ ...f, date: f.date === d ? 'all' : d }));
-
   const peek = selected ? PEEK_SELECTED : PEEK_EMPTY;
+  const taxVerified = Boolean(taxDecl?.confirmed);
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title="Społeczność" subtitle="Wydarzenia i aktywność w Toruniu" />
-      <View style={styles.filterBar}>
-        <ChipRow>
-          <Chip
-            label="Filtry"
-            icon="options"
-            count={nFilters || undefined}
-            selected={nFilters > 0}
-            onPress={() => setFiltersOpen(true)}
-          />
-          <Chip label="Dziś" selected={filters.date === 'today'} onPress={() => toggleQuickDate('today')} />
-          <Chip label="Jutro" selected={filters.date === 'tomorrow'} onPress={() => toggleQuickDate('tomorrow')} />
-          <Chip label="Weekend" selected={filters.date === 'weekend'} onPress={() => toggleQuickDate('weekend')} />
-          <Chip
-            label="Bezpłatne"
-            icon="gift-outline"
-            selected={filters.cost === 'free'}
-            onPress={() => setFilters((f) => ({ ...f, cost: f.cost === 'free' ? 'all' : 'free' }))}
-          />
-          <Chip
-            label="Z zapisami"
-            icon="ticket-outline"
-            selected={filters.type === 'limited'}
-            onPress={() => setFilters((f) => ({ ...f, type: f.type === 'limited' ? 'all' : 'limited' }))}
-          />
-          {nFilters > 0 ? (
-            <Chip label="Wyczyść" icon="close" onPress={() => setFilters(DEFAULT_FILTERS)} />
-          ) : null}
-        </ChipRow>
-      </View>
+      <ScreenHeader title="Społeczność" subtitle="Wydarzenia i zniżki partnerskie w Toruniu" />
 
       <View style={styles.mapArea} onLayout={(e) => setMapHeight(e.nativeEvent.layout.height)}>
         <TorunMap
@@ -140,6 +114,13 @@ export default function SpolecznoscScreen() {
           bottomInset={peek}
           hideControls={panelOpen}
         />
+
+        {/* Pojedynczy przycisk filtrów w rogu mapy otwierający wysuwane menu */}
+        <CornerFilterButton
+          count={nFilters || undefined}
+          onPress={() => setFiltersOpen(true)}
+        />
+
         <NearbyPanel
           events={filtered}
           loading={loading}
@@ -150,8 +131,11 @@ export default function SpolecznoscScreen() {
           hasFilters={nFilters > 0}
           onClearFilters={() => setFilters(DEFAULT_FILTERS)}
           onOpenEvent={(e) => setDetailId(e.id)}
+          onOpenOffer={(o) => setOpenOffer(o)}
           onShowOnMap={showOnMap}
           onClearSelection={() => setSelectedId(null)}
+          taxDecl={taxDecl}
+          onOpenTaxForm={() => setTaxFormOpen(true)}
         />
       </View>
 
@@ -167,6 +151,23 @@ export default function SpolecznoscScreen() {
         onClose={() => setDetailId(null)}
         onShowOnMap={showOnMap}
         onNeedAuth={onNeedAuth}
+        taxVerified={taxVerified}
+        onOpenTaxForm={() => setTaxFormOpen(true)}
+      />
+      <OfferDetailSheet
+        offer={openOffer}
+        onClose={() => setOpenOffer(null)}
+        taxVerified={taxVerified}
+        onOpenTaxForm={() => setTaxFormOpen(true)}
+      />
+      <TaxpayerFormSheet
+        visible={taxFormOpen}
+        onClose={() => setTaxFormOpen(false)}
+        initial={taxDecl}
+        onSave={(decl) => {
+          setTaxDecl(decl);
+          showToast('Potwierdzono rozliczanie podatków w Toruniu', 'success');
+        }}
       />
     </View>
   );
@@ -174,12 +175,5 @@ export default function SpolecznoscScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.cream },
-  filterBar: {
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.line,
-  },
   mapArea: { flex: 1 },
 });
-

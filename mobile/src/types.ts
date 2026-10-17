@@ -67,10 +67,19 @@ export interface TrafficIncident {
 
 export type NoticeType = 'delay' | 'interruption' | 'reroute' | 'other';
 
+export interface TransitStop {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  lines: string[];
+}
+
 export interface TransitNotice {
   id: string;
   type: NoticeType;
   lines: string[];
+  stopId?: string;
   stop: string;
   location: string;
   reportedAt: string;
@@ -83,7 +92,7 @@ export interface TransitNotice {
   /** Współrzędne przystanku / miejsca utrudnienia. */
   lat: number;
   lng: number;
-  /** Przebieg odcinka linii komunikacji miejskiej objętego komunikatem. */
+  /** Przebieg odcinka linii komunikacji miejskiej objętego zweryfikowanym komunikatem. */
   path: MapPoint[];
   /** Długość objętego odcinka trasy (np. "2,1 km"). */
   lengthLabel: string;
@@ -109,6 +118,12 @@ export interface CityOffer {
   hours?: string;
   code?: string;
   sponsor?: string;
+  /** Dane logotypu firmy / przedsiębiorstwa partnerskiego */
+  logoText?: string;
+  logoColor?: string;
+  logoBg?: string;
+  logoIcon?: string;
+  isPrivatePartner?: boolean;
 }
 
 export interface ResidentBenefit {
@@ -121,6 +136,43 @@ export interface ResidentBenefit {
   icon: string;
 }
 
+export type CivicCategory = 'wniosek' | 'zgloszenie' | 'skarga' | 'pytanie';
+
+export type CivicStatus = 'new' | 'in_review' | 'answered' | 'implemented';
+
+export interface CivicMessage {
+  id: string;
+  referenceCode: string;
+  category: CivicCategory;
+  department: string;
+  title: string;
+  district: string;
+  description: string;
+  author: string;
+  createdAt: string;
+  status: CivicStatus;
+  statusLabel: string;
+  officialReply?: string;
+  upvotes: number;
+  isMine?: boolean;
+}
+
+export interface UserNotification {
+  id: string;
+  title: string;
+  body: string;
+  createdAt: string;
+  read: boolean;
+  kind: 'city' | 'transit' | 'event' | 'offer';
+}
+
+export interface NotificationPrefs {
+  transitAlerts: boolean;
+  eventReminders: boolean;
+  authorityReplies: boolean;
+  partnerDiscounts: boolean;
+}
+
 export interface DemoUser {
   id: string;
   name: string;
@@ -130,3 +182,4 @@ export interface DemoUser {
 }
 
 export type SessionUser = Pick<DemoUser, 'id' | 'name' | 'email' | 'createdAt'>;
+

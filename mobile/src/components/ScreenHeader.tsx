@@ -4,42 +4,65 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, font, radius, spacing } from '../theme';
 import { useAuth } from '../state/AuthContext';
+import { useAppData } from '../state/AppDataContext';
 
 export function AccountButton() {
   const { user, openAuth } = useAuth();
-  if (!user) {
-    return (
-      <Pressable
-        onPress={() => openAuth('login')}
-        accessibilityRole="button"
-        accessibilityLabel="Zaloguj się lub załóż konto"
-        style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.75 }]}
-      >
-        <Ionicons name="person-outline" size={16} color={colors.inkSoft} />
-        <Text style={styles.loginText}>Konto</Text>
-      </Pressable>
-    );
-  }
-  const initials = user.name
-    .split(' ')
-    .map((p) => p[0])
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
+  const { unreadNotificationCount } = useAppData();
+
   return (
-    <Pressable
-      onPress={() => openAuth('account')}
-      accessibilityRole="button"
-      accessibilityLabel={`Konto: ${user.name}`}
-      style={({ pressed }) => [styles.avatarPill, pressed && { opacity: 0.8 }]}
-    >
-      <View style={styles.avatar}>
-        <Text style={styles.avatarText}>{initials}</Text>
-      </View>
-      <Text style={styles.userName} numberOfLines={1}>
-        {user.name.split(' ')[0]}
-      </Text>
-    </Pressable>
+    <View style={styles.rightRow}>
+      <Pressable
+        onPress={() => openAuth('account')}
+        accessibilityRole="button"
+        accessibilityLabel={`Powiadomienia (${unreadNotificationCount} nieprzeczytanych)`}
+        style={({ pressed }) => [styles.bellBtn, pressed && { opacity: 0.78 }]}
+      >
+        <Ionicons
+          name={unreadNotificationCount > 0 ? 'notifications' : 'notifications-outline'}
+          size={18}
+          color={unreadNotificationCount > 0 ? colors.brick : colors.inkSoft}
+        />
+        {unreadNotificationCount > 0 ? (
+          <View style={styles.bellBadge}>
+            <Text style={styles.bellBadgeText}>{unreadNotificationCount}</Text>
+          </View>
+        ) : null}
+      </Pressable>
+
+      {!user ? (
+        <Pressable
+          onPress={() => openAuth('login')}
+          accessibilityRole="button"
+          accessibilityLabel="Zaloguj się lub otwórz panel użytkownika"
+          style={({ pressed }) => [styles.loginBtn, pressed && { opacity: 0.78 }]}
+        >
+          <Ionicons name="person-outline" size={15} color={colors.ink} />
+          <Text style={styles.loginText}>Zaloguj</Text>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={() => openAuth('account')}
+          accessibilityRole="button"
+          accessibilityLabel={`Panel użytkownika: ${user.name}`}
+          style={({ pressed }) => [styles.avatarPill, pressed && { opacity: 0.8 }]}
+        >
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {user.name
+                .split(' ')
+                .map((p) => p[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.userName} numberOfLines={1}>
+            {user.name.split(' ')[0]}
+          </Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -89,6 +112,40 @@ const styles = StyleSheet.create({
   },
   title: { ...font.h2, color: colors.ink },
   subtitle: { ...font.small, color: colors.muted, marginTop: 1 },
+  rightRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bellBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: colors.cream,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -3,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: colors.brick,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  bellBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
+  },
   loginBtn: {
     height: 34,
     paddingHorizontal: 12,
@@ -100,7 +157,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
   },
-  loginText: { color: colors.inkSoft, fontWeight: '600', fontSize: 13 },
+  loginText: { color: colors.ink, fontWeight: '600', fontSize: 13 },
   avatarPill: {
     height: 34,
     paddingLeft: 4,
